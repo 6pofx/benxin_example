@@ -187,4 +187,24 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
   派生副本继续用原模型/原 Loop。（写 exp-12 时踩到：一度"真实模型用例全绿"，其实一次都没打过去。）
 * **问题 26（中）**：`beforeTool` 短路会 `break` 掉整条拦截器链 —— 审计拦截器只要顺序靠后就什么都看不到。
 
+---
+
+## 七、版本管理
+
+本工程是一个独立的 Git 仓库（`main` 分支），约定如下：
+
+```bash
+git status                  # 提交前先看一眼
+mvn -o -B test              # 提交前跑一遍（14/14 绿才提交）
+git add -A && git commit -m "feat(exp-03): ..."
+```
+
+| 约定 | 说明 |
+|---|---|
+| **只提交源码与文档** | `target/`、`*.log`、H2 文件库（`*.mv.db`）、沙箱目录（`sandbox/`）、报文留档（`wire-log/`）、`.idea/` 全部在 `.gitignore` 里，**不要** `git add -f` 绕过 |
+| **换行符** | `.gitattributes` 统一 `eol=lf`（`*.cmd` / `*.bat` 保持 CRLF），避免 Windows 上整批文件显示为"已修改" |
+| **提交信息** | `<type>(<scope>): <中文摘要>`，`scope` 用模块名（如 `exp-02`、`common`、`docs`） |
+| **不提交密钥** | exp-11 的 key 一律走 `${DEEPSEEK_API_KEY:}` 占位符；提交前可用 `git diff --cached \| findstr /R "sk-[A-Za-z0-9]\{20,\}"` 自查 |
+| **插件源码不在本仓库** | `../benxin/` 是只读的插件源码，本仓库只从本地 Maven 仓库消费它的二进制 |
+
 > **插件源码未做任何修改。** 所有问题都只以"断言 + 注释"的形式记录在示例工程里。
