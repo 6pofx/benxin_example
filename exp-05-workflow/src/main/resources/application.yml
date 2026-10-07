@@ -1,0 +1,96 @@
+spring:
+  application:
+    name: exp-05-workflow
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型名 = 下面 models 的 key，或某个 LlmModel bean 的 name()。
+  # 本示例的模型来自 MockModelConfiguration（离线脚本化，零 token）。
+  default-model: mock
+
+  agent:
+    # 工作流演示里 agent 节点是"一次完整子任务"，所以默认步数给得比 exp-01 宽
+    default-loop: dsh-minimal
+    max-steps: 24
+    # 硬上限：无论注解里写多大，都会被夹到 32
+    hard-max-steps: 32
+    memory: true
+    # 我们自定义了一个 AgentListener bean（WorkflowEventCollector），
+    # 它按"类型"顶掉内置日志监听器 —— 这里保留开关只为说明默认口径
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  # ------------------------------------------------------------------
+  # 声明式工作流的三条装配路径，这里演示前两条
+  # ------------------------------------------------------------------
+  workflows:
+    # ① location：注册成 Loop "workflow:<配置键>"，YAML 放在 classpath:workflows/ 下。
+    #    注册名取**配置键**（workflow:triage），不是 YAML 里的 name（triage）——
+    #    两者不一致时必须用配置键去 LoopRegistry 里找。
+    triage:
+      location: classpath:workflows/triage.yml
+
+    # 回边循环：branch ↔ set/tool 互指，转 3 圈后由条件退出
+    loop-workflow:
+      location: classpath:workflows/loop-workflow.yml
+
+    # ② inline：定义直接写在配置里，不占一个文件。
+    #    ⚠️ 一个坑（本示例实测）：WorkflowIo 的自动格式识别只看首个字符是不是 '{'，
+    #    所以**行内 flow 写法**（{name: x, nodes: [...]}）会被当成 JSON 送进 Jackson，
+    #    报一句与真实原因无关的 "非法 JSON: {name: ...}"。
+    #    内联 YAML 请务必用块写法（下面这种），或者显式走 WorkflowIo.read(text, Format.YAML)。
+    inline-demo:
+      inline: |
+        name: inline-demo
+        description: 内联 YAML：不改文件、不改 Java，一段配置就多一个工作流
+        nodes:
+          - id: begin
+            type: start
+            prompt: "内联工作流收到：${input}"
+          - id: mark
+            type: set
+            set:
+              note: 内联定义里的 set 节点
+          - id: done
+            type: end
+            output: "内联工作流完成：${note} / 输入=${begin}"
+        edges:
+          - from: begin
+            to: mark
+          - from: mark
+            to: done
+
+    # ③ flaky-tools：retry 与 continueOnError 的靶子
+    flaky-tools:
+      location: classpath:workflows/flaky-tools.yml
+
+    # ④ budget-probe：步数预算的靶子（用 maxSteps = 2 的 BudgetAgent 跑）
+    budget-probe:
+      location: classpath:workflows/budget-probe.yml
+
+    # 注意：workflows/deadloop.yml **刻意不在这里注册**。
+    # 它是一张跑不完的图，注册进来会让误调用变成启动好之后的运行时异常；
+    # 演示时用 WorkflowIo.read(...) 现读现用。
+
+  # HTTP 端点默认关闭，本示例也不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"
+
+# 演示开关：mvn spring-boot:run / java -jar 时默认跑；测试里不想要可以关掉
+exp:
+  demo:
+    enabled: true

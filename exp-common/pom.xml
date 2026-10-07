@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>exp-common</artifactId>
+    <packaging>jar</packaging>
+    <name>exp-common</name>
+    <description>
+        各示例子项目共用的离线基础设施：脚本化模型（零 token 驱动完整 Agent 循环）、
+        本地 HTTP 桩（抓真实报文做协议演示）、极简 DataSource 与建表脚本执行器、
+        统一的演示输出。刻意只依赖 benxin-core，不依赖 Spring。
+    </description>
+
+    <dependencies>
+        <!--
+          只依赖 benxin-core：exp-common 里的东西（模型、HTTP 桩、DataSource）
+          都是纯 Java 基础设施，脱离 Spring 也能用；子项目自行声明 Spring 依赖。
+        -->
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

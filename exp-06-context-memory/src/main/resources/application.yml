@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: exp-06-context-memory
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型 = 下面 models 的 key，或某个 LlmModel bean 的 name()。
+  # 本示例的三个模型都来自 OfflineModelConfiguration（离线、零 token）。
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    hard-max-steps: 32
+    # 默认开启记忆；@LlmAgent(memory = false) 与 AgentBuilder.memory(false) 都能关掉它
+    memory: true
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    # 本示例只用一个自定义的"长文本"工具，不装配内置文件/命令工具
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  web:
+    enabled: false
+
+exp:
+  demo:
+    enabled: true
+  # H2 文件库落在 target/ 下：既是"示例允许自己建库"的落地方式，
+  # 也让"历史真的落盘了"这件事可以被第二个 DataSource 验证。
+  store:
+    url: jdbc:h2:file:./target/exp06-memory
+    username: sa
+    password: ""
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

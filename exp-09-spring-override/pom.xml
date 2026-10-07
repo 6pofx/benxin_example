@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <!-- 本模块不在聚合工程的 <modules> 里（避免与并行开发的其它模块争抢聚合构建），
+             但仍通过 relativePath 复用父 POM 的依赖管理与插件配置。 -->
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-09-spring-override</artifactId>
+    <name>exp-09-spring-override</name>
+    <description>
+        示例 09 · 装配与覆盖：LlmAutoConfiguration 里 14 个 @ConditionalOnMissingBean 切面逐个用自定义 bean 顶掉、
+        @ConditionalOnMissingBean 的有/无对照实验、llm.enabled=false 整体关停、@EnableLlmAgents 的三种扫描范围、
+        程序化装配（Agent.builder / AgentSpec / toBuilder / maxSteps 报错 / hardMaxSteps 夹取）、
+        裸 core 门面（Benxin，零 Spring 依赖）、LlmProperties 全字段绑定、@LlmModelDef/@LlmLoop 注册细节、
+        AgentRegistry 的惰性语义。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,40 @@
+# ============================================================================
+# mysql profile —— 把示例从 H2 文件库切到本机 MySQL 8
+# ----------------------------------------------------------------------------
+# 用法：
+#   java -jar target/exp-10-database-1.0.0.jar --spring.profiles.active=mysql
+#   mvn -o test -Dspring.profiles.active=mysql
+#
+# 这一份配置与 application.yml 的差别<b>只有</b>数据源本身：schema.sql / data.sql /
+# 工作流 YAML / 所有 Java 代码一行都不用改。这正是"示例默认用 H2、一键切真库"
+# 这句话的全部含金量所在。
+# ============================================================================
+spring:
+  datasource:
+    # 密码走环境变量占位：${MYSQL_PASSWORD:123456}
+    #   * 冒号后面的 123456 是"本机开发环境的默认值"，因此零配置也能跑通；
+    #   * 真正部署时用 MYSQL_PASSWORD 环境变量覆盖即可，示例代码本身不含生产密码。
+    # 用户名同理（${MYSQL_USERNAME:root}）。
+    #
+    # 连接串上的三个参数都不是可有可无的：
+    #   createDatabaseIfNotExist=true —— 库不存在时自动建，示例"允许自己建库"的落地方式；
+    #   useSSL=false&allowPublicKeyRetrieval=true —— 本机开发没有证书，
+    #       MySQL 8 默认的 caching_sha2_password 需要这条才允许非 SSL 下取公钥；
+    #   serverTimezone=Asia/Shanghai&characterEncoding=UTF-8 —— 避免中文乱码与时区错位。
+    url: jdbc:mysql://127.0.0.1:3306/benxin_exp_demo?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+
+  # 建表与示例数据照旧自动执行：两份脚本都是幂等的，所以每次启动重跑都安全。
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+      continue-on-error: false
+
+logging:
+  level:
+    # 切到真库时把 Spring JDBC 的日志压住，控制台留给演示输出
+    org.springframework.jdbc: WARN

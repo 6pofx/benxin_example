@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-05-workflow</artifactId>
+    <name>exp-05-workflow</name>
+    <description>
+        示例 05 · 工作流模式：声明式工作流（六种节点 / 条件表达式 / ${} 模板 / 回边循环 /
+        retry 与 continueOnError / 三道防线 / 加载期校验 / WorkflowIo）与结构化编排
+        （staged：规划 → 执行 → 验收 → 修复 → 汇总）。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

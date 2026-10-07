@@ -1,0 +1,78 @@
+# ============================================================================
+# 回边循环：branch ↔ tool/set 互指，干净地转 3 圈后由条件退出
+# ----------------------------------------------------------------------------
+#   begin(start) → seed(set count=0) → counter(branch)
+#                                       ├─ ${count} < 3 ─→ bump(tool: next_attempt) ─┐
+#                                       │                        │                   │
+#                                       │                     tally(set: count=${bump})
+#                                       │                        │                   │
+#                                       │                        └── 回边 ──────────┘
+#                                       └─ 默认 ────────→ done(end)
+#
+# 断言口径：
+#   visited = [begin, seed, counter, bump, tally, counter, bump, tally, counter, bump, tally, counter, done]
+#   executions = 13（executions 数的是访问次数，不含重试）
+#   循环体是 tool + set，全程没有一次模型调用 ⇒ 步数预算对它完全无效
+#
+# ★ 这张图踩过的一个坑，也是最值得学的一处（实测）：
+#   工具的返回值**不会**自动写回变量表。引擎只把节点输出记在「节点 id」名下 ——
+#   也就是 ${bump}；而循环条件读的是 ${count}。少了 tally（set）这一步，
+#   ${count} 永远是 0，条件永远成立，图会一直转到 maxVisitsPerNode 才被拦下。
+#   所以：**工具算出来的值，必须用一个 set 节点显式写回你要读的那个变量。**
+# ============================================================================
+name: loop-workflow
+description: branch/set 互指的回边循环：转 3 圈后由条件退出
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "循环演示任务：${input}"
+
+  - id: seed
+    type: set
+    set:
+      count: "0"
+
+  - id: counter
+    type: branch
+    description: 只读 ${count} 决定继续转还是收工
+
+  # 用工具算自增，是因为 set 的模板只做 ${} 插值、不做算术：
+  # n: "${count} + 1" 得到的是字符串 "0 + 1"，而条件里要用 ${count} < 3 做**数值**比较。
+  - id: bump
+    type: tool
+    tool: next_attempt
+    args:
+      n: "${count}"
+    description: 计数 +1（纯计算，不碰模型）
+
+  # 把工具输出显式写回 count —— 见文件头的「★」那一节
+  - id: tally
+    type: set
+    set:
+      count: "${bump}"
+
+  - id: done
+    type: end
+    output: |-
+      共转了 ${count} 圈
+      计数器最后一次输出：${bump}
+      循环体（tool + set）从来没调过模型，所以步数预算对这类环完全无效 ——
+      拦住它的是单节点访问上限 maxVisitsPerNode。
+
+edges:
+  - from: begin
+    to: seed
+  - from: seed
+    to: counter
+  # 条件边必须在默认边之前，否则它永远不可达（加载期会打警告）
+  - from: counter
+    to: bump
+    when: "${count} < 3"
+  - from: counter
+    to: done
+  # 回边：把边指回上游就是循环，不需要任何专门的循环节点
+  - from: bump
+    to: tally
+  - from: tally
+    to: counter

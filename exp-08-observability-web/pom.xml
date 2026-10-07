@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-08-observability-web</artifactId>
+    <name>exp-08-observability-web</name>
+    <description>
+        示例 08 · 可观测性与 HTTP 端点：AgentListener 的 12 个回调（含思维链 / 工具 / 子代理 /
+        自定义事件 / onError / AgentResult 全字段）、多监听器的叠加与"内置监听器让位"语义、
+        AgentInterceptor 的 9 个钩子（含 beforeTool 短路、beforeModel/afterModel 改写、order 顺序）、
+        @LlmGuard 作用范围与 LlmInterceptorChain、LlmStreamHandler 7 回调 / StreamCollector /
+        ofText 流式三件套，以及 /llm/** 全部端点的实际契约（含 SSE 与自定义 base-path）。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <!--
+          本示例要演示 llm.web.enabled=true 的 REST + SSE 端点，所以必须引入 Web 启动器；
+          starter 里的 LlmWebAutoConfiguration 带 @ConditionalOnClass(DispatcherServlet.class)，
+          少了它端点根本不会被装配（而且是"静默不装配"，只在 llm.web.enabled=true 时才容易发现）。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

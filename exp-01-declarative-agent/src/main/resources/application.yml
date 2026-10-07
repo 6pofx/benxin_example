@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: exp-01-declarative-agent
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型名 = 下面 models 的 key，或某个 LlmModel bean 的 name()。
+  # 本示例的 mock 模型来自 OfflineModelConfiguration（离线、零 token）。
+  default-model: mock
+
+  agent:
+    # 全局默认 Loop；@LlmAgent(loop = "...") 可逐个覆盖
+    default-loop: dsh-minimal
+    # 注解里没写 maxSteps 时回落到这里
+    max-steps: 8
+    # 防呆硬上限：无论怎么写都不会超过它（声明式路径自动传入）
+    hard-max-steps: 32
+    # 默认开启记忆（@LlmAgent(memory = false) 可关）
+    memory: true
+    # 内置日志监听器：把每一步的步数、用量、工具调用打到日志
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    # 本示例只演示"声明式路径"，不装配内置文件/命令工具
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  # HTTP 端点默认关闭，本示例也不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

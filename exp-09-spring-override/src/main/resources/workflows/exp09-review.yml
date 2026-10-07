@@ -1,0 +1,33 @@
+##
+## llm.workflows.code-review.location 指向的工作流定义。
+##
+## 它演示的是"加一个工作流 = 加一个 YAML + 一行配置"：
+## 本模块没有任何一行 Java 代码提到 code-review，但 LoopRegistry 里会出现
+## workflow:code-review（见 LlmPropertiesBindingTest 的断言）。
+##
+name: exp09-review
+description: exp-09 用的配置驱动工作流（证明 workflows.<key>.location 这条路是通的）
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "待处理内容：${input}"
+
+  - id: analyze
+    type: agent
+    instruction: 你是严格的评审者，只指出真实存在的问题。
+    prompt: |
+      请分析下面的内容并列出问题清单：
+      ${begin}
+
+  - id: end
+    type: end
+    output: |
+      评审结论：
+      ${analyze}
+
+edges:
+  - from: begin
+    to: analyze
+  - from: analyze
+    to: end

@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: exp-10-database
+  main:
+    banner-mode: off
+
+  # ------------------------------------------------------------------
+  # 默认库：H2 文件库 —— 零配置即可跑，不需要本机装数据库
+  # ------------------------------------------------------------------
+  # MODE=MySQL 让 H2 说 MySQL 的方言，DATABASE_TO_LOWER=TRUE 让小写表名可用，
+  # 于是同一份 schema.sql / data.sql 在 H2 与真实 MySQL 上都能执行 —— 这是
+  # "示例默认离线可跑、又能一键切到真库"的关键。
+  # 库文件落在 ./target/ 下（Maven 的构建产物目录，.gitignore 里天然被忽略），
+  # 因此它同时也演示了"记忆跨进程重启仍然在"：删掉这个文件才算真的清库。
+  datasource:
+    url: jdbc:h2:file:./target/exp10-db;MODE=MySQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  # ------------------------------------------------------------------
+  # 建表与示例数据：always 表示每次启动都执行一遍
+  # ------------------------------------------------------------------
+  # 两份脚本都写成幂等的（schema：CREATE TABLE IF NOT EXISTS；data：先 DELETE 再 INSERT），
+  # 所以 always 不会导致第二次启动失败。
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+      continue-on-error: false
+
+llm:
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    hard-max-steps: 32
+    memory: true
+    # 内置日志监听器：本示例自己提供了一个 AgentListener bean（运行审计），
+    # 按类型顶替掉内置这个 —— 这里保留开关只为说明默认口径。
+    logging-listener: true
+    # 默认审批策略：只有工具自己声明 requiresApproval() 才询问（写库工具正是如此）
+    approval-policy: on-request
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  # ------------------------------------------------------------------
+  # 声明式工作流：注册成 Loop "workflow:order-compliance"
+  # ------------------------------------------------------------------
+  workflows:
+    order-compliance:
+      location: classpath:workflows/order-compliance.yml
+
+  web:
+    enabled: false
+
+exp:
+  database:
+    # 写库审批的金额阈值：<= 自动批准，> 落 approval_request 表待人工处理。
+    # 刻意做成配置项，因为演示里要把它调小一次来展示"被拒绝"这条路径。
+    approval-threshold: 500
+  demo:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

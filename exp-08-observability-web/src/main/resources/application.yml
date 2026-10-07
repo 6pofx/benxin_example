@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: exp-08-observability-web
+  main:
+    banner-mode: off
+
+server:
+  # 端口写 0 让操作系统分配：示例要同时跑测试、spring-boot:run 与别人并行开发的模块，
+  # 固定 8080 会撞车。真实端口从 Environment 的 local.server.port 读（见 ObservabilityDemo）。
+  port: 0
+
+llm:
+  # 默认模型名 = 某个 LlmModel bean 的 name()。本示例的 mock 来自 OfflineModelConfiguration。
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    # 防呆硬上限：无论注解怎么写都不会超过它
+    hard-max-steps: 32
+    memory: true
+    # 置为 false 是为了让"自定义监听器让位"这件事在日志里看得更干净：
+    # 本示例注册了两个 AgentListener bean，内置 llmLoggingListener 因
+    # @ConditionalOnMissingBean(AgentListener.class) 直接不装配，这一行写什么都一样。
+    logging-listener: false
+    approval-policy: on-request
+
+  tools:
+    # 只演示 CommonTools（反射工具），不装配内置文件/命令工具：示例要确定性离线可跑
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  web:
+    # 本示例的主角之一：把 Agent 暴露成 REST + SSE。默认是 false，必须显式打开。
+    enabled: true
+    base-path: /llm
+
+  # 声明式工作流：只为让 GET /llm/loops 里出现一个 workflow:<key> 条目 ——
+  # 端点契约要求"自定义 Loop 与 workflow:<key> 都要能列出来"。
+  workflows:
+    greet:
+      inline: |
+        name: greet
+        nodes:
+          - id: hello
+            type: agent
+            agent: chatAssistant
+            prompt: "你好"
+
+demo:
+  # 演示 ApplicationRunner 的总开关；测试里不需要它跑（测试自己断言）。
+  enabled: true
+
+exp:
+  demo:
+    # 跑完演示就退出 JVM：这让 `java -jar` 能一次性验证完整个演示（含真实 HTTP 调用），
+    # 不必手工 kill 一个一直运行的 Web 应用。默认 false，保持"正常 Web 应用"的形态。
+    exit-after-run: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

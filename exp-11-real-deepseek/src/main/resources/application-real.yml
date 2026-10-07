@@ -1,0 +1,66 @@
+# ============================================================================
+# real profile：真实 DeepSeek 端点。
+#
+# 真实模型配置**只**出现在这里 —— 默认 profile 里没有 deepseek 端点，
+# 所以"不小心联网"在配置层面就被排除了。
+#
+# 打开方式（二选一，可以叠加）：
+#   ① java -Dexp.real.enabled=true -jar exp-11-real-deepseek-1.0.0.jar
+#   ② java --spring.profiles.active=real -jar exp-11-real-deepseek-1.0.0.jar
+#
+# key 的取值口径（三级兜底，代码侧见 ApiKeyResolver）：
+#   ① 环境变量 DEEPSEEK_API_KEY   ② JVM 属性 -Ddeepseek.api-key=...
+#   ③ 环境变量 DEEPSEEK_KEY
+# yml 里用嵌套占位符把 ①② 都接上：先看环境变量，再回落到 JVM 属性。
+# 缺省值是空串 —— 取不到 key 时不联网、不抛异常，只打印一句提示。
+# ============================================================================
+exp:
+  real:
+    enabled: true
+
+llm:
+  # real 模式下把默认模型切到 deepseek。注意：Agent 接口上**没有**写 model 属性，
+  # 所以"换模型"完全靠这一行配置 —— 业务代码一行都不用改（见 README 第 9 条）。
+  default-model: deepseek
+
+  models:
+    # ① Chat Completions 协议（OpenAI 兼容）
+    deepseek:
+      protocol: openai
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:${deepseek.api-key:}}
+      model: deepseek-chat
+      temperature: 0
+      # 抠 token 的三件套：输出上限 48、温度为 0（可复现）、不重试（一次调用 = 一笔请求）
+      max-tokens: 48
+      max-retries: 0
+      connect-timeout: 10s
+      read-timeout: 60s
+      stream-read-timeout: 60s
+
+    # ② Responses 协议（OpenAI Responses API 形态）
+    # base-url 直接给出完整端点：Endpoints 已含 /responses 时原样使用（见 ResponsesApiCodec#endpoint）
+    deepseek-responses:
+      protocol: responses
+      base-url: https://api.deepseek.com/responses
+      api-key: ${DEEPSEEK_API_KEY:${deepseek.api-key:}}
+      model: deepseek-chat
+      temperature: 0
+      max-tokens: 48
+      max-retries: 0
+      connect-timeout: 10s
+      read-timeout: 60s
+      stream-read-timeout: 60s
+
+    # ③ 故意写错的 key：专门用来演示鉴权失败路径。
+    # 上游会直接拒绝（HTTP 401），因此这一条**不消耗任何 token** ——
+    # 错误处理演示就该用这种"免费"的方式做。
+    deepseek-badkey:
+      protocol: openai
+      base-url: https://api.deepseek.com
+      api-key: sk-invalid
+      model: deepseek-chat
+      max-tokens: 8
+      max-retries: 0
+      connect-timeout: 10s
+      read-timeout: 30s

@@ -1,0 +1,18 @@
+# 统一按 LF 存储，检出时按平台转换：
+# 这个工程在 Windows 上开发（.cmd / PowerShell），但 Java 源码与文档跨平台，
+# 不写这一行的话，Windows 的 core.autocrlf 会把整批文件标成"已修改"。
+* text=auto eol=lf
+
+# Windows 脚本必须是 CRLF，否则某些环境下 cmd.exe 解析会出问题
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jar binary
+*.mv.db binary
+
+# 生成物在 diff / 语言统计里不显示
+target/** linguist-generated=true
+*.log linguist-generated=true

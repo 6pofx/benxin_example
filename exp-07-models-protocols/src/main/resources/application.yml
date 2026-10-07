@@ -1,0 +1,133 @@
+# ============================================================================
+# 示例 07 · 模型装配与协议
+# ============================================================================
+# 硬性约定：**完全离线**。
+#   四条协议通道的 base-url 都写 ${exp.stub.base-url}，而它由
+#   ModelsProtocolsApplication#main 在 Spring 启动之前写入系统属性，
+#   指向一个只监听 127.0.0.1 随机端口的本地桩服务。
+#   本文件里不存在任何真实厂商地址 —— 这是刻意为之，不是省事。
+# ============================================================================
+spring:
+  application:
+    name: exp-07-models-protocols
+  main:
+    banner-mode: off
+    # 演示里会以编程方式再起一个"子上下文"（见 ProtocolWireDemo），
+    # 允许 bean 定义覆盖对它没有影响，这里只关掉横幅让输出干净
+    web-application-type: none
+
+exp:
+  # 模型端点参数的"全字段样本"：ModelConfigDemo 逐条读它并与
+  # llm.models.<key>.* 的绑定结果对照，证明 yml 与 java 两条通道落到同一个 ModelConfig。
+  model:
+    name: settings-sample
+    protocol: openai
+    base-url: ${exp.stub.base-url}
+    api-key: "Bearer sk-settings"      # 故意写成 "Bearer xxx"：演示插件的容错（不会拼成 Bearer Bearer）
+    model: stub-gpt
+    headers:
+      X-Trace-Id: exp-07
+      Authorization: "Bearer sk-overridden"   # 自定义头覆盖内置认证头，是 Azure 一类网关的常规做法
+    connect-timeout: 3s
+    read-timeout: 8s
+    stream-read-timeout: 20s
+    max-retries: 0
+    temperature: 0.15
+    max-tokens: 128
+    extra:
+      top_k: 5
+      vendor_flag: exp-07
+
+llm:
+  # 默认模型名：指向 primary 的那一条。四条通道都能被桩服务接住，因此换哪个都不影响演示。
+  default-model: openai-demo
+
+  models:
+    # ---- ① OpenAI Chat Completions ----
+    openai-demo:
+      protocol: openai
+      base-url: ${exp.stub.base-url}
+      api-key: sk-openai
+      model: stub-gpt
+      primary: true
+      order: 0
+      # 交给代码接管：ModelDemoConfiguration#openaiDemoModel 是一个同名的 LlmModel bean，
+      # starter 先按 yml 装配、再注册 bean，于是 bean 覆盖同名配置。
+      # 两者唯一的差别是 model（stub-gpt → stub-gpt-bean）与能力声明（thinking 被打开）。
+      temperature: 0.2
+      max-tokens: 256
+
+    # ---- ② Anthropic Messages ----
+    anthropic-demo:
+      protocol: anthropic
+      base-url: ${exp.stub.base-url}
+      api-key: sk-anthropic
+      model: claude-stub
+      max-tokens: 512          # Anthropic 的 max_tokens 必填；插件缺省兜底 4096
+      order: 1
+
+    # ---- ③ Google Gemini ----
+    gemini-demo:
+      protocol: gemini
+      base-url: ${exp.stub.base-url}
+      api-key: sk-gemini
+      model: gemini-stub-001
+      order: 2
+
+    # ---- ④ OpenAI Responses API ----
+    responses-demo:
+      protocol: responses
+      base-url: ${exp.stub.base-url}
+      api-key: sk-responses
+      model: gpt-stub-001
+      order: 3
+
+    # ---- ⑤ 自定义协议（protocol: demo 由 DemoProtocolCodec bean 提供）----
+    demo:
+      protocol: demo
+      base-url: ${exp.stub.base-url}
+      api-key: sk-demo
+      model: demo-chat
+      headers:
+        X-Demo-Tenant: exp-07
+      max-retries: 0
+
+    # ---- ⑥ 重试对照组：max-retries 的差异就是 ModelFactory 有没有包 RetryingLlmModel ----
+    retry-demo:
+      protocol: openai
+      base-url: ${exp.stub.base-url}
+      api-key: sk-retry
+      model: stub-gpt
+      max-retries: 2
+
+    plain-demo:
+      protocol: openai
+      base-url: ${exp.stub.base-url}
+      api-key: sk-plain
+      model: stub-gpt
+      max-retries: 0
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 4
+    hard-max-steps: 8
+    memory: false
+    # 本示例不演示监听器，关掉它让控制台里只有自己打印的结论
+    logging-listener: false
+
+  tools:
+    # 工具切面另有专门的子项目；这里要的是"干净的请求体"，因此连内置工具都不装
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

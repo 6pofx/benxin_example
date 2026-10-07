@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.benxin.exp</groupId>
+    <artifactId>benxin-exp</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>benxin-exp</name>
+    <description>
+        本心（benxin）插件的**可运行示例**工程：聚合 Maven 项目，内部按功能切面拆成多个
+        Spring Boot 子项目，每个子项目独立启动、独立建库，把插件的一个切面演示到"看得见、
+        跑得动、断言得住"的程度。
+    </description>
+
+    <!--
+      ============================================================================
+      设计说明
+      ============================================================================
+      1. 本工程是**使用者视角**的示例工程：只从本地仓库消费
+         com.benxin:benxin-spring-boot-starter:1.1.0，不把 benxin 当源码依赖，
+         因此示例里写出来的每一行代码，第三方使用者都能原样照抄。
+      2. 每个子项目都是一个完整的 Spring Boot 应用：有 @SpringBootApplication、
+         有 application.yml、可 `mvn spring-boot:run` 直接看到演示输出、可打成可执行 jar。
+      3. **默认零 token**：除 exp-11-real-deepseek 之外，所有子项目都用
+         exp-common 里的离线模型（ScriptedLlmModel）驱动，不联网、不花钱，
+         却能完整跑通"模型决策 → 工具调用 → 结果回灌 → 收尾"的全链路。
+      4. **示例自带断言**：每个子项目都有 @SpringBootTest 测试，把演示里展示的行为
+         断言成可回归的用例 —— 示例因此不会"随时间腐烂"。
+      5. exp-10 允许建库（默认 H2 文件库零配置可跑，mysql profile 走本机 MySQL）。
+      6. exp-11 才会真正调用 DeepSeek，且必须显式打开开关，单次调用 max-tokens 极小。
+    -->
+
+    <modules>
+        <module>exp-common</module>
+        <module>exp-01-declarative-agent</module>
+        <module>exp-02-tools</module>
+        <module>exp-03-builtin-sandbox</module>
+        <module>exp-04-loops</module>
+        <module>exp-05-workflow</module>
+        <module>exp-06-context-memory</module>
+        <module>exp-07-models-protocols</module>
+        <module>exp-08-observability-web</module>
+        <module>exp-09-spring-override</module>
+        <module>exp-10-database</module>
+        <module>exp-11-real-deepseek</module>
+        <module>exp-12-local-lmstudio</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- 被演示的插件版本：与本地仓库中已安装的 benxin 保持一致 -->
+        <benxin.version>1.1.0</benxin.version>
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.benxin</groupId>
+                <artifactId>benxin-core</artifactId>
+                <version>${benxin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.benxin</groupId>
+                <artifactId>benxin-spring-boot-starter</artifactId>
+                <version>${benxin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.benxin.exp</groupId>
+                <artifactId>exp-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <encoding>UTF-8</encoding>
+                        <!-- 反射读取 @LlmTool 方法与 @LlmAgent 接口的参数名所必需 -->
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <!--
+                          JDK 21+ 默认禁止动态加载 agent，Spring Boot 测试会因此失败；
+                          这里与 benxin 自身的构建保持一致的放行参数。
+                        -->
+                        <argLine>-Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading -Dfile.encoding=UTF-8</argLine>
+                        <trimStackTrace>false</trimStackTrace>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

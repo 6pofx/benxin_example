@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <!--
+          本模块刻意**不**写进 benxin_exp/pom.xml 的 <modules>（那个文件由其他并行开发的
+          子项目共同拥有）。因此这里指向文件系统上的父 POM，保证单独构建也能拿到
+          java 17 / surefire 参数 / dependencyManagement 这些统一配置。
+        -->
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-06-context-memory</artifactId>
+    <name>exp-06-context-memory</name>
+    <description>
+        示例 06 · 记忆 / 上下文 / 压缩 / 分词估算 / 提示词来源 / 多模态消息：
+        MemoryStore 三种来源（内存 LRU、自定义 JDBC、disabled）、@Memory 多轮续接与隔离、
+        自定义 ContextManager 与 DefaultContextManager 的阈值语义、三种 ContextCompactor、
+        TokenEstimator 替换、SystemPromptProvider（含方法级 @SystemPrompt 的覆盖关系）、
+        PromptTemplates 分段提示词、ChatMessage/ContentPart 全谱与 ImagePart 多模态。
+        默认完全离线（ScriptedLlmModel），零 token。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <!-- JdbcTemplate：自定义 MemoryStore 与提示词平台都用它落库 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- H2 文件库：jdbc:h2:file:./target/exp06-memory，零安装即可跑 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,156 @@
+##
+## exp-09 的完整 llm.* 配置。
+##
+## 这份 yml 有一个刻意的目标：把 LlmProperties 的**每一个字段**都写一遍，
+## 好让 LlmPropertiesBindingTest 能把「yml → LlmProperties → ModelConfig」这条翻译链
+## 逐字段对照出来。字段名一个不漏地抄自：
+##   benxin-spring-boot-starter/src/main/java/com/benxin/llm/spring/LlmProperties.java
+##
+## 注意 api-key 用占位符：示例工程不该出现任何真实密钥。
+##
+spring:
+  application:
+    name: exp-09-spring-override
+  main:
+    banner-mode: off
+
+exp:
+  demo:
+    # false 可以让演示不跑（测试里靠它把控制台噪声关掉）
+    enabled: true
+
+llm:
+  # ---- 总开关：置 false 会整体关停本心的自动配置（见 LlmAutoConfiguration 上的
+  #      @ConditionalOnProperty(prefix="llm", name="enabled", havingValue="true", matchIfMissing=true)）
+  enabled: true
+
+  # 默认模型名。这里指向 stub，而不是 mock —— 原因与"默认离线、零 token"这条约束有关：
+  #
+  #   · mock 是一个纯 yml 配置出来的 HTTP 模型，base-url 是 https://api.example.invalid/v1
+  #     （刻意不可解析的域名）。而声明式路径恒为流式（DefaultLoopContext 直接看
+  #     capabilities().streaming()），一旦它成为默认模型，每走一次 supportAssistant
+  #     都要先等一次连接超时，然后抛 ModelException。
+  #   · stub 这个名字被 DefaultOverrideConfiguration.stubLlmModel() 这个 LlmModel bean 覆盖
+  #     （@LlmModelDef("stub")，bean 后登记所以赢过同名配置项）。那个实现默认在内存里跑脚本决策，
+  #     只在被显式指向 StubHttpServer 时才真的发 HTTP —— 于是"默认离线"与
+  #     "要 HTTP 证据时真的有 HTTP"两件事同时成立。
+  #
+  # 顺带，这也让"bean 覆盖同名配置项"这条通道有了真实的观测点：
+  # ToolAssistant 显式 model = "stub"，它一定是那个 bean 实现。
+  default-model: stub
+
+  # ---- 模型端点定义。key 就是 @LlmAgent(model = "...") 里写的名字 ----
+  models:
+    # 第一个端点：走"配置驱动"的 HTTP 模型（openai 协议）。
+    # api-key 用占位符，默认不生效、也不会被演示真正调用。
+    mock:
+      protocol: openai
+      base-url: https://api.example.invalid/v1
+      api-key: ${EXP_DEMO_KEY:not-used}
+      model: exp-09-config-model
+      headers:
+        X-Exp-Tenant: exp-09
+        X-Exp-Trace: "true"
+      extra:
+        top_p: 0.9
+        seed: 20260909
+      connect-timeout: 3s
+      read-timeout: 12s
+      stream-read-timeout: 20s
+      max-retries: 3
+      temperature: 0.4
+      max-tokens: 256
+      primary: true
+      order: 1
+
+    # 第二个端点：这个名字会被"容器里的 LlmModel bean"覆盖 ——
+    # DefaultOverrideConfiguration.stubLlmModel() 用的就是 stub 这个名字（见那份配置的注释）。
+    # 于是 yml 与代码两条路径的优先级在同一张模型表里看得见。
+    stub:
+      protocol: openai
+      base-url: https://api.example.invalid/v1
+      api-key: ${EXP_DEMO_KEY:not-used}
+      model: exp-09-config-model
+      headers:
+        X-Exp-Tenant: exp-09
+      extra:
+        top_p: 0.8
+      connect-timeout: 2s
+      read-timeout: 6s
+      stream-read-timeout: 10s
+      max-retries: 0
+      temperature: 0.1
+      max-tokens: 128
+      primary: false
+      order: 2
+
+  # ---- Agent 全局默认值：@LlmAgent 上没写的属性回落到这里 ----
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    stream: false
+    memory: true
+    temperature: 0.25
+    max-tokens: 512
+    system-prompt: "（来自 llm.agent.system-prompt 的全局兜底提示词）"
+    logging-listener: true
+    approval-policy: on-request
+    # 防呆硬上限：声明式路径由 LlmAgentFactory 自动传入；程序化装配要自己调 hardMaxSteps()
+    hard-max-steps: 32
+
+  # ---- 内置工具与沙箱：默认全关，必须显式三连开启 ----
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+    allowed-commands:
+      - git status
+      - mvn -v
+    denied-commands:
+      - docker
+      - kubectl
+    enabled:
+      - read
+      - glob
+    exec-timeout: 45s
+    max-output-chars: 20000
+    max-file-bytes: 524288
+
+  # ---- 声明式工作流：每个 key 会注册成 workflow:<key> 的 Loop ----
+  workflows:
+    quick-fix:
+      inline: |
+        name: quick-fix
+        description: 内联工作流（不落地任何文件）
+        nodes:
+          - id: begin
+            type: start
+            prompt: "任务：${input}"
+          - id: answer
+            type: agent
+            prompt: |
+              请用一句话回答：
+              ${begin}
+          - id: end
+            type: end
+            output: "${answer}"
+        edges:
+          - from: begin
+            to: answer
+          - from: answer
+            to: end
+
+    code-review:
+      location: classpath:workflows/exp09-review.yml
+
+  # HTTP 端点默认关闭：本示例只演示装配，不暴露 REST
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

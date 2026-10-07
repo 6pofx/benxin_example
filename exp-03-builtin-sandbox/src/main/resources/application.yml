@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: exp-03-builtin-sandbox
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型名 = 某个 LlmModel bean 的 name()。本示例的 mock 来自离线脚本化模型。
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    # 单次运行最多几次模型往返：本示例一次演示 = 「强制工具 → 结果回灌 → 收尾」，2 步足够
+    max-steps: 4
+    hard-max-steps: 32
+    memory: true
+    logging-listener: true
+    # 默认审批策略：只有 requiresApproval()=true 的写/执行类工具才问
+    approval-policy: on-request
+
+  tools:
+    # ① 总开关：不写 true，8 个内置工具一个都不会进工具表
+    builtin-enabled: true
+    # 围栏根目录：所有工具路径必须落在它之内（相对路径按进程工作目录解析）
+    workdir: target/sandbox
+    # ② 写文件总闸：write / edit 需要它
+    allow-write: true
+    # ③ 执行命令总闸：bash 需要它
+    allow-exec: true
+    # 白名单：非空时，每一条子命令都必须命中其中之一（替换语义）
+    allowed-commands:
+      - echo
+      - cd
+    # 黑名单：**追加**在内置那 29 条高危模式之上（这里实际生效 30 条）
+    denied-commands:
+      - docker
+    # enabled 是增量：只读三件套永远是基线，写/执行类由上面两个开关放出，
+    # todo_write / task 不在任何默认基线里，必须像这样显式点名。
+    enabled:
+      - todo_write
+      - task
+    exec-timeout: 10s
+    max-output-chars: 20000
+    max-file-bytes: 1048576
+
+  # HTTP 端点默认关闭，本示例也不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

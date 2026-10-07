@@ -1,0 +1,63 @@
+# ============================================================================
+# 默认 profile：完全离线。
+#
+# 这里刻意「一行 deepseek 配置都没有」——真实模型端点只出现在 application-real.yml。
+# 于是"忘了关开关"这件事在默认 profile 下根本不可能发生：容器里没有可联网的模型，
+# 任何真实调用都无处可发。这是本项目"token 消耗必须极低"的第一道闸门。
+# ============================================================================
+spring:
+  application:
+    name: exp-11-real-deepseek
+  main:
+    banner-mode: off
+
+exp:
+  # 真实调用总开关。默认 false；两种打开方式都支持：
+  #   ① JVM 属性：java -Dexp.real.enabled=true -jar ...
+  #   ② profile：--spring.profiles.active=real（application-real.yml 里也置为 true）
+  real:
+    enabled: false
+  wire-log:
+    # 真实报文留档目录（相对进程工作目录）。每次真实 HTTP 往来落一个 JSON 文件。
+    dir: target/wire-log
+  demo:
+    enabled: true
+
+llm:
+  # 默认模型名对应下面 models 的 key，或某个 LlmModel bean 的 name()。
+  # 本示例的离线模型来自 OfflineModelConfiguration（离线、零 token）。
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    # 「跑一次就完」：把步数预算收到 3，任何意外都不可能演变成多轮反复试
+    max-steps: 3
+    # 防呆硬上限：注解里写再多也不会超过它
+    hard-max-steps: 4
+    # 默认开启记忆（@LlmAgent(memory = false) 可关）
+    memory: true
+    # 全局兜底采样参数：即使注解忘写，也只允许 48 个输出 token
+    temperature: 0
+    max-tokens: 48
+    # 唯一的 AgentListener 位置留给了 RealCallMetrics（它只在 real 模式下存在），
+    # 因此这里显式关掉内置的日志监听器，免得读者以为两套监听器在同时工作。
+    logging-listener: false
+    approval-policy: on-request
+
+  tools:
+    # 只演示"自己写的极小工具"，不装配内置文件/命令工具
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  # HTTP 端点默认关闭，本示例也不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

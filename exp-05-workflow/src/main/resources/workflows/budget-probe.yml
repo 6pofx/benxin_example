@@ -1,0 +1,68 @@
+# ============================================================================
+# 步数预算：第一道防线的靶子
+# ----------------------------------------------------------------------------
+#   begin(start) → step1(agent) → step2(agent) → step3(agent) → step4(agent) → done(end)
+#
+# 四个 agent 节点串联，每个都要一次模型往返。把 maxSteps 调到 2（实测口径）：
+#   begin 是 start 节点，不调模型 ⇒ ctx.step() 仍是 0；
+#   step1 调一次模型 → step = 1；step2 调一次模型 → step = 2；
+#   轮到 step3 时 runtime.outOfBudget()（step >= maxSteps）为真 ⇒ 引擎立刻返回
+#   truncated=true 的 WorkflowRun，并把"最后一份产出"（step2 的输出）当成半成品交出去。
+#   所以 visited = [begin, step1, step2]、executions = 3 —— 预算是"走到下一个节点才发现"的。
+#
+# 与其它 Loop 保持同一口径：预算耗尽时 AgentResult.maxStepsReached() 也是 true。
+# 注册进 llm.workflows.budget-probe 后由 BudgetAgent（maxSteps = 2）使用。
+# ============================================================================
+name: budget-probe
+description: 四个串联的 agent 节点：预算一耗尽就如实标记 truncated
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "预算演示：${input}"
+
+  - id: step1
+    type: agent
+    instruction: 你是流程里的第 1 步执行者。
+    prompt: |-
+      第 1 步：把下面这句话改写成一句结论。
+      ${begin}
+
+  - id: step2
+    type: agent
+    instruction: 你是流程里的第 2 步执行者。
+    prompt: |-
+      第 2 步：给上一步的结论补一条依据。
+      ${step1}
+
+  - id: step3
+    type: agent
+    instruction: 你是流程里的第 3 步执行者。
+    prompt: |-
+      第 3 步：指出结论可能失效的场景。
+      ${step2}
+
+  - id: step4
+    type: agent
+    instruction: 你是流程里的第 4 步执行者。
+    prompt: |-
+      第 4 步：给出最终答复。
+      ${step3}
+
+  - id: done
+    type: end
+    output: |-
+      【预算演示最终答复】
+      ${step4:-（第 4 步没有机会执行 —— 预算在第 3 步之前就耗尽了）}
+
+edges:
+  - from: begin
+    to: step1
+  - from: step1
+    to: step2
+  - from: step2
+    to: step3
+  - from: step3
+    to: step4
+  - from: step4
+    to: done

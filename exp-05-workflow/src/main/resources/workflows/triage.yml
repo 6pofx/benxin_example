@@ -1,0 +1,160 @@
+# ============================================================================
+# 工单分诊（exp-05 主演示图）
+# ----------------------------------------------------------------------------
+# 这张图刻意把「六种节点 + 三类边 + 回边循环 + 模板全谱」压在一张可审计的图里：
+#
+#   begin(start) → classify(agent) → route(branch)
+#                                     ├─ 紧急 ─→ urgent(agent) → stamp(tool)
+#                                     │                        → mark-urgent(set) ┐
+#                                     └─ 默认 ─→ normal(set) ───────────────────┐ │
+#                                                                              ▼ ▼
+#                                                                        report(set)
+#                                                                             │
+#                                                                            check(branch)
+#                                                                              ├─ ${report} 含 紧急
+#                                                                              │   且 ${rounds} ≤ 2
+#                                                                              │      ─→ bump(tool) → rework(set) ─┐
+#                                                                              │                        ▲          │
+#                                                                              │                        └── 回边 ───┘
+#                                                                              └─ 默认 ─→ done(end)
+#
+# 三处「容易猜错」的写法在这里都能看到（都是实测出来的，不是猜的）：
+#   1) 两条分支各自 set 自己的 channel，再汇聚到 report —— 这样 ${channel} 才真的
+#      记录了"走了哪条路"。如果把 channel 写在汇聚点上，走哪条路都会是同一个值。
+#   2) 默认边必须放在最后一条：引擎按声明顺序取第一条成立的边走，顺序即优先级。
+#   3) report 必须是 **set 而不是 end**：引擎一旦执行到 end 节点就收工，
+#      写在 end 后面的 check / rework 会整段变成死代码（回边也就永远不会转）。
+#      所以"中间产物"用 set 写进变量，"最终答案"只留给最后那个 end 节点渲染。
+#
+# 还有一处更细的坑写在 check 的条件里，见下面的注释。
+# ============================================================================
+name: triage
+description: 工单分诊：分级 → 紧急分支补处置建议 → 打时间戳 → 回边熔断 → 产出分诊单
+
+nodes:
+  # ---- start：不写 prompt 时直接透传任务原文（写 prompt 则渲染它）----
+  - id: begin
+    type: start
+    prompt: "待分诊工单：${input}"
+    description: 入口，给原始工单加一层包装
+
+  # ---- agent：一次完整的模型子任务；instruction 会作为前缀拼在 prompt 之前 ----
+  - id: classify
+    type: agent
+    instruction: |-
+      你是值班工程师。只做分级与要点归纳，不要给出处置步骤。
+      分级取值只有三个：紧急 / 严重 / 一般。
+    prompt: |-
+      请对下面这张工单分级（紧急 / 严重 / 一般），并用一句话说明判断依据：
+      ${begin}
+
+  - id: route
+    type: branch
+    description: 纯路由，不产生输出也不覆盖 ${last}
+
+  # ---- 紧急分支：agent 补内容 + tool 直调工具（不经过模型）----
+  - id: urgent
+    type: agent
+    instruction: 你是应急负责人，只输出可执行的处置步骤，不要复述工单。
+    prompt: |-
+      这张工单已被判为紧急，请补三条处置建议：
+      ${input}
+
+  - id: stamp
+    type: tool
+    tool: get_current_time
+    description: 直接调已注册工具取服务器时间，不消耗任何模型调用
+
+  - id: mark-urgent
+    type: set
+    set:
+      channel: 加急通道
+      severity: 紧急
+
+  # ---- 默认分支：只写变量，不做模型调用 ----
+  - id: normal
+    type: set
+    set:
+      channel: 常规通道
+      severity: 一般
+
+  # ---- 中间产物：用 set 写进变量，${名称:-兜底值} 演示模板兜底写法 ----
+  # rounds 是回边循环的计数器，在这里播种成 "0"：
+  # 条件表达式读不到变量时得到的是 null（${rounds} 求值为 null ⇒ 数值比较判 false），
+  # 所以"循环计数器"这类变量必须先播种，否则第一圈条件就成立不了。
+  - id: report
+    type: set
+    set:
+      report: |-
+        【分诊单】
+        通道：${channel}
+        判级：${severity}
+        时间戳：${stamp:-未打戳}
+        处置：${urgent:-无需应急处置}
+        分析：${classify}
+      rounds: "0"
+
+  # ---- 回边循环的"闸门"：set + tool 组成循环体，一个 token 都不花 ----
+  - id: check
+    type: branch
+    # ⚠️ 这里刻意不用 ${rounds:-0} 这种写法：**条件表达式里的 ${x:-兜底} 不生效**
+    #    （:- 只有模板渲染 Templates.render 才认，Conditions 会拿 "rounds:-0" 整串去查表，
+    #    查不到就是 null ⇒ 比较直接判 false）。要兜底就在上游 set 节点里先播种。
+    description: 判断报告里是否还带着紧急标记、且回炉次数没用完
+
+  - id: bump
+    type: tool
+    tool: next_attempt
+    args:
+      n: "${rounds}"
+    description: 回炉计数 +1（纯计算，不碰模型）
+
+  - id: rework
+    type: set
+    # 工具输出只记在 ${bump} 名下；写回 rounds 靠这一个 set 节点（引擎不会自动写回）
+    set:
+      report: "${report}\n（已回炉第 ${bump} 次）"
+      rounds: "${bump}"
+
+  - id: done
+    type: end
+    output: "${report}"
+
+edges:
+  - from: begin
+    to: classify
+
+  - from: classify
+    to: route
+
+  # 出边按声明顺序取第一条成立的 —— 条件边在前，默认边在最后
+  - from: route
+    to: urgent
+    when: "${input} contains 紧急 or ${classify} contains 紧急"
+  - from: route
+    to: normal
+
+  - from: urgent
+    to: stamp
+  - from: stamp
+    to: mark-urgent
+  - from: mark-urgent
+    to: report
+  - from: normal
+    to: report
+
+  - from: report
+    to: check
+
+  # 回边：把边指回上游就是循环，不需要任何专门的循环节点。
+  # 条件里同时用到了 matches（正则，右操作数按原文截取）与数值比较 —— 两者都在这里真的生效。
+  - from: check
+    to: bump
+    when: "${report} matches (?i)紧急 and ${rounds} <= 2"
+  - from: check
+    to: done
+
+  - from: bump
+    to: rework
+  - from: rework
+    to: check

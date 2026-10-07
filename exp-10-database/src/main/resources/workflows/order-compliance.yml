@@ -1,0 +1,180 @@
+# ============================================================================
+# 订单合规审批（exp-10 的工作流演示图）
+# ----------------------------------------------------------------------------
+# 输入：客户 id（字符串，例如 "1"、"999"）
+#
+#   begin(start)              "客户 ${input}" —— 包装成一个可读的任务名
+#     └→ resolve(set)         ★ 把输入落成 customerId 变量（编排层取参，模型不参与）
+#          └→ check(agent)    模型判定"这笔单子该不该走大额审批"，给出结论行
+#               └→ fetch(tool) ★ 不经过模型，直调 query_orders 取真实数据
+#                    └→ amount(tool) 直调 order_amount_of 把真实金额算出来（条件要用数字）
+#                         └→ decide(branch)
+#                              ├─ ${amount} > 500 ─→ high(set)   ─┐
+#                              └─ 默认              ─→ low(set)   ─┤
+#                                                                   ▼
+#                                                             explain(agent)
+#                                                                   └→ done(end)
+#
+#   fetch 失败时（客户不存在 / 参数不合法）走补偿分支：
+#     fetch(tool, continueOnError: true)
+#          ├─ ${error} is not empty ─→ compensate(set) ─┐
+#          └─ 默认                                     ─┤
+#                                                        ▼
+#                                                    explain(agent) → done(end)
+#
+# 四条值得记住的口径：
+#   1) tool 节点是"编排层直调工具"：一次都不调模型，所以也不消耗步数预算。
+#      把"取数"和"判断"分开写，图才可审计 —— 判断归模型，取数归工具。
+#   2) tool 节点的参数只从黑板取，**没有默认值兜底**：黑板上没有的名字会被
+#      Templates 原样保留成 "${xxx}" 字符串（这是它刻意的设计，让拼错的占位符可见）。
+#      参数绑不进 Long 会直接让节点失败，所以"取参"必须是图里显式的一步。
+#   3) 条件用的是 **工具查出来的真实数据**，不是模型的自述。
+#      因此改一行数据库里的金额，工作流走的分支就会跟着变（测试里断言了这一点）。
+#   4) 默认边必须放在最后一条：引擎按声明顺序取第一条成立的边走，边序即优先级。
+#      反过来的话后面的条件边永远不可达（加载期会打 WARN）。
+# ============================================================================
+name: order-compliance
+description: 订单合规审批：模型判定 → 工具查真实金额 → 按阈值分支 → 审批说明 → 出结论
+
+nodes:
+  # ---- start：包装输入，并把它落成 tool 节点要用的 customerId ----
+  # 这条工作流的**输入就是客户 id**（"1"、"999"…）。两个 tool 节点的
+  # args.customerId 取的是黑板上一个叫 customerId 的变量，二者靠这里的一次显式赋值接上。
+  #
+  # 为什么不用"从一段自然语言里抽数字"这种更花哨的写法：`${...}` 只支持
+  # "取变量 + 可选默认值"两种形态（{@code ${x}} / {@code ${x:-默认}}），
+  # 没有正则或函数调用。**这条边界值得记住** —— 想从自由文本里抽参数，
+  # 要么在前面加一个 agent 节点让模型吐结构化结果，要么把输入约定成结构化字段。
+  - id: begin
+    type: start
+    prompt: "客户 ${input}"
+    description: 入口，给工作流输入加一层包装
+
+  - id: resolve
+    type: set
+    set:
+      customerId: "${input}"
+    description: 把工作流输入（客户 id）落成 tool 节点直接可用的 customerId 变量
+
+  # ---- agent：模型只负责"给定金额说该走哪级审批"，不负责算数 ----
+  # 说明：脚本化离线模型看到"审批"会回一句结论行；换成真实模型时这里就是一次正常的
+  # 提示词调用，图本身不用改。
+  - id: check
+    type: agent
+    instruction: |-
+      你是订单合规审核员。只输出一行结论，格式为「合规结论：<通过/需大额审批>」，不要解释。
+    prompt: |-
+      请先给出这笔订单该走哪一级审批的初步结论，稍后会用数据库里的真实金额复核。
+      ${begin}
+
+  # ---- tool：不经过模型，直调查库工具拿真实订单 ----
+  - id: fetch
+    type: tool
+    tool: query_orders
+    continueOnError: true
+    args:
+      customerId: "${customerId}"
+    description: 直调查库工具取该客户的真实订单；失败时靠 continueOnError 走补偿分支
+
+  # ---- tool：把真实金额算成一个"能参与数字比较"的值 ----
+  - id: amount
+    type: tool
+    tool: order_amount_of
+    continueOnError: true
+    args:
+      customerId: "${customerId}"
+    description: 直调聚合工具取订单总额（条件表达式要拿它和阈值比大小）
+
+  # ---- branch：纯路由，自己不产生输出，也不覆盖 ${last} ----
+  - id: decide
+    type: branch
+    description: 按工具查出来的真实金额决定走哪条审批通路
+
+  # ---- 两条分支各自 set 自己的变量 ----
+  # 关键：channel / level 分别在两条分支上写。如果写到汇聚点（explain 之前），
+  # 那么不管走哪条路，值都会是同一个 —— "走的是哪条分支"就看不出来了。
+  - id: high
+    type: set
+    set:
+      channel: 大额人工审批通道
+      level: 需大额审批
+      approvalNote: "金额 ${amount} 超过阈值 500，需人工审批后入库"
+
+  - id: low
+    type: set
+    set:
+      channel: 自动通过通道
+      level: 合规通过
+      approvalNote: "金额 ${amount} 未超过阈值 500，可自动放行"
+
+  # ---- 补偿分支：只有 fetch / amount 失败时才会走到这里 ----
+  - id: compensate
+    type: set
+    set:
+      channel: 异常补偿通道
+      level: 取数失败
+      approvalNote: "取数失败，转人工核对：${error}"
+
+  # ---- agent：走审批说明分支，把工具拿到的真实数据讲成人话 ----
+  - id: explain
+    type: agent
+    instruction: |-
+      你是订单助手的审批说明生成器。根据给定的通道与真实取数结果，
+      写两句审批说明，第一句必须原样带上「说明」二字。
+    prompt: |-
+      审批通道：${channel}
+      审批级别：${level}
+      审批备注：${approvalNote}
+      订单真实数据：${fetch}
+      订单真实总额：${amount}
+      模型初步结论：${check}
+
+  # ---- end：把黑板变量渲染成最终答复 ----
+  - id: done
+    type: end
+    output: |-
+      【合规审批单】
+      通道：${channel}
+      级别：${level}
+      备注：${approvalNote}
+      真实总额：${amount:-取数失败}
+      订单明细：${fetch:-（取数为空）}
+      审批说明：${explain}
+
+edges:
+  - from: begin
+    to: resolve
+  - from: resolve
+    to: check
+  - from: check
+    to: fetch
+
+  # 取数失败优先走补偿：条件边在前，默认边在后
+  - from: fetch
+    to: compensate
+    when: "${error} is not empty"
+  - from: fetch
+    to: amount
+
+  # amount 也可能失败（同一个客户 id 非法时两个工具都会失败）
+  - from: amount
+    to: compensate
+    when: "${error} is not empty"
+  - from: amount
+    to: decide
+
+  # 分支条件读的是工具查出来的真实金额；默认边放最后
+  - from: decide
+    to: high
+    when: "${amount} > 500"
+  - from: decide
+    to: low
+
+  - from: high
+    to: explain
+  - from: low
+    to: explain
+  - from: compensate
+    to: explain
+  - from: explain
+    to: done

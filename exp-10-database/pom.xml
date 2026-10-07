@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-10-database</artifactId>
+    <name>exp-10-database</name>
+    <description>
+        示例 10 · 数据库：把「JDBC MemoryStore（记忆落库）+ 查库工具 + AgentListener 运行审计 +
+        AgentInterceptor 工具审计 + ApprovalHandler 写库审批 + 声明式工作流驱动审批 + 事务一致性」
+        串成一个端到端的智能订单助手。默认 H2 文件库零配置可跑，mysql profile 切到本机 MySQL。
+    </description>
+
+    <properties>
+        <mysql.connector.version>9.1.0</mysql.connector.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <!--
+          Spring JDBC：DataSource 由 spring-boot-starter-jdbc 按 spring.datasource.* 自动配置，
+          spring.sql.init.* 会自动执行 classpath 下的 schema.sql / data.sql。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- 默认库：H2 文件库（MODE=MySQL 让同一份 schema.sql 在两种库上都能跑） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          mysql profile 用的驱动。
+          版本刻意显式写成 9.1.0，而不是全靠父 POM 管理（父 POM 管的是 9.4.0）：
+          本工程的验证环境要求 `mvn -o`（完全离线）必须能构建，而本地仓库里
+          只有到 9.1.0 为止的驱动。9.1.0 与本机 MySQL 8.0.43 完全兼容，
+          示例用到的只是最基础的能力。
+        -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>${mysql.connector.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,100 @@
+llm:
+  # 这份 fixture 只给 LlmPropertiesBindingTest 用：
+  # ApplicationContextRunner 默认不加载 src/main/resources/application.yml，
+  # 显式写清楚"配置从哪来"比隐式依赖 classpath 更不容易出意外。
+  enabled: true
+  default-model: mock
+
+  models:
+    mock:
+      protocol: openai
+      base-url: https://api.example.invalid/v1
+      api-key: ${EXP_DEMO_KEY:not-used}
+      model: exp-09-config-model
+      headers:
+        X-Exp-Tenant: exp-09
+        X-Exp-Trace: "true"
+      extra:
+        top_p: 0.9
+        seed: 20260909
+      connect-timeout: 3s
+      read-timeout: 12s
+      stream-read-timeout: 20s
+      max-retries: 3
+      temperature: 0.4
+      max-tokens: 256
+      primary: true
+      order: 1
+
+    stub:
+      protocol: openai
+      base-url: https://api.example.invalid/v1
+      api-key: ${EXP_DEMO_KEY:not-used}
+      model: exp-09-config-model
+      headers:
+        X-Exp-Tenant: exp-09
+      extra:
+        top_p: 0.8
+      connect-timeout: 2s
+      read-timeout: 6s
+      stream-read-timeout: 10s
+      max-retries: 0
+      temperature: 0.1
+      max-tokens: 128
+      primary: false
+      order: 2
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    stream: false
+    memory: true
+    temperature: 0.25
+    max-tokens: 512
+    system-prompt: "（来自 llm.agent.system-prompt 的全局兜底提示词）"
+    logging-listener: true
+    approval-policy: on-request
+    hard-max-steps: 32
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+    allowed-commands:
+      - git status
+      - mvn -v
+    denied-commands:
+      - docker
+      - kubectl
+    enabled:
+      - read
+      - glob
+    exec-timeout: 45s
+    max-output-chars: 20000
+    max-file-bytes: 524288
+
+  workflows:
+    quick-fix:
+      inline: |
+        name: quick-fix
+        description: 内联工作流（不落地任何文件）
+        nodes:
+          - id: begin
+            type: start
+            prompt: "任务：${input}"
+          - id: answer
+            type: agent
+            prompt: |
+              请用一句话回答：
+              ${begin}
+          - id: end
+            type: end
+            output: "${answer}"
+        edges:
+          - from: begin
+            to: answer
+          - from: answer
+            to: end
+    code-review:
+      location: classpath:workflows/exp09-review.yml

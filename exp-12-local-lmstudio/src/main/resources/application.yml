@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: exp-12-local-lmstudio
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型是离线的脚本模型：**注册一个端点 ≠ 调用它**。
+  # LM Studio 没开、或开关关着时，所有默认路径都在离线模型上跑，绝不会因为
+  # 一个连不上的 localhost 端点而失败。
+  default-model: mock
+
+  agent:
+    default-loop: dsh-minimal
+    max-steps: 8
+    hard-max-steps: 20
+    memory: true
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+
+  models:
+    # 本机 LM Studio 的 OpenAI 兼容端点。
+    # base-url 写成 .../v1 是 LM Studio 文档里的形态：OpenAiCodec 认出"版本段"
+    # 之后只会追加 /chat/completions（写成只有域名会补成 /v1/chat/completions，两种都对）。
+    local-lmstudio:
+      protocol: openai
+      base-url: http://127.0.0.1:1234/v1
+      # LM Studio 不校验 key，占位即可 —— 但它不能为空，
+      # 否则 OpenAiCodec 不会下发 Authorization 头，某些网关会直接 401。
+      api-key: lm-studio
+      # 下发给上游的模型 id：LM Studio 里显示什么就写什么。
+      # 可用环境变量覆盖（例如换成 qwen/qwen3-vl-4b 做速度对照）。
+      model: ${LOCAL_MODEL_ID:qwen/qwen3-vl-8b}
+      temperature: 0
+      max-tokens: 512
+      # 本地端点不重试：一次调用 = 一笔请求，失败原因一眼可见
+      max-retries: 0
+      connect-timeout: 5s
+      # 本地 8B 模型首次加载要预热，读超时给宽一点
+      read-timeout: 5m
+      stream-read-timeout: 5m
+
+exp:
+  local:
+    # auto：探测端点，可达就用本地模型跑真实演示，不可达就只跑离线演示并打印原因
+    # on  ：强制使用（不可达时明确失败，适合"我就是要测它"）
+    # off ：强制离线（CI / 没装 LM Studio 时用）
+    mode: auto
+    base-url: http://127.0.0.1:1234
+    model: qwen/qwen3-vl-8b
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

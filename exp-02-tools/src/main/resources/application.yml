@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: exp-02-tools
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型 = 下面 models 的 key，或某个 LlmModel bean 的 name()。
+  # 本示例有两个 bean 形态的模型：mock（脚本对话，默认）与 scripted-tools（按脚本发起工具调用）。
+  default-model: mock
+
+  agent:
+    # 全局默认 Loop；@LlmAgent(loop = "...") 可逐个覆盖
+    default-loop: dsh-minimal
+    # 注解里没写 maxSteps 时回落到这里
+    max-steps: 8
+    # 防呆硬上限
+    hard-max-steps: 32
+    memory: true
+    # 本示例用 ToolEventCollector 顶掉了内置日志监听器（@ConditionalOnMissingBean(AgentListener.class)），
+    # 这行留着只是为了让配置与其它子项目对齐
+    logging-listener: true
+    # 只有 ON_REQUEST 才会去问 ToolCallback.requiresApproval()，程序化工具那一节依赖它
+    approval-policy: on-request
+
+  tools:
+    # 本示例只演示"自己写的工具"，不装配内置文件/命令工具；
+    # 但沙箱依然是真围栏（见 ToolsDemo 最后两节）
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  # HTTP 端点默认关闭，本示例也不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

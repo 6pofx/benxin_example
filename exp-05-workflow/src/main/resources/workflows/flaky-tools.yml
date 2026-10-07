@@ -1,0 +1,80 @@
+# ============================================================================
+# 节点级容错：retry 与 continueOnError（对 agent / tool 一视同仁）
+# ----------------------------------------------------------------------------
+#   begin(start) → stamp(tool, retry: 3) → charge(tool, retry: 1, continueOnError: true)
+#                     │                              ├─ ${error} is not empty ─→ compensate(set) ┐
+#                     │                              └─ 默认 ─────────────────→ ok(set) ────────┐ │
+#                     ▼                                                                          ▼ ▼
+#                                                                                            done(end)
+#
+# 两个节点都由 exp-05 自己的 FlakyTools 提供，脚本化地"失败 N 次"：
+#   * stamp    —— 前 2 次必失败，第 3 次成功；retry: 3 恰好够用 ⇒ 走的是"重试后成功"
+#   * charge   —— 账号被禁用时次次失败；continueOnError: true ⇒ 不中断，出边读 ${error} 走补偿
+#
+# 关键口径：**硬失败（重试用尽仍抛异常）的节点也会进访问表**，
+# 所以 visited 证明的是"尝试过哪些节点"，而不只是"成功走过哪些节点"。
+# ============================================================================
+name: flaky-tools
+description: tool 节点的 retry 重试成功 + continueOnError 补偿分支
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "容错演示：${input}"
+
+  # retry: 3 ⇒ 最多执行 1 + 3 = 4 次；脚本让它前 2 次失败
+  - id: stamp
+    type: tool
+    tool: flaky_stamp
+    retry: 3
+    args:
+      payload: "${begin}"
+    description: 前 2 次抛异常，第 3 次成功
+
+  # retry: 1 ⇒ 最多执行 2 次；账号被禁用时次次失败，但 continueOnError 兜住
+  - id: charge
+    type: tool
+    tool: flaky_charge
+    retry: 1
+    continueOnError: true
+    args:
+      account: "禁用账号"
+      amount: "100"
+    description: 注定失败，但只让这个节点失败、不让整张图崩掉
+
+  # 补偿分支：条件表达式直接读保留变量 ${error}
+  - id: compensate
+    type: set
+    set:
+      outcome: "已进入补偿流程"
+      detail: "${error}"
+
+  - id: ok
+    type: set
+    set:
+      outcome: "正常完成"
+      detail: "-"
+
+  - id: done
+    type: end
+    output: |-
+      【容错演示结果】
+      结果：${outcome}
+      时间戳（重试之后才拿到的）：${stamp}
+      失败详情：${detail}
+
+edges:
+  - from: begin
+    to: stamp
+  - from: stamp
+    to: charge
+  # 条件边在前：失败时优先走补偿
+  - from: charge
+    to: compensate
+    when: "${error} is not empty"
+  - from: charge
+    to: ok
+  - from: compensate
+    to: done
+  - from: ok
+    to: done

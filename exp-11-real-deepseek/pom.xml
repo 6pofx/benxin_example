@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-11-real-deepseek</artifactId>
+    <name>exp-11-real-deepseek</name>
+    <description>
+        示例 11 · 真实 DeepSeek 模型：把「本心」插件接到真实端点上的全链路演示 ——
+        最小对话、真实工具调用闭环、真实 SSE 流式、Responses 协议对照、报文留档（脱敏）、
+        多轮记忆、Loop 对照、错误路径（401）。默认&lt;b&gt;不联网&lt;/b&gt;，必须显式打开开关；
+        每次调用 max-tokens=48、max-retries=0，全部真实调用控制在 2000 tokens 以内。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                      这半个 argLine 是父 pom 那份的补充，只为让 build.log 里的中文可读：
+                      JDK 18+ 之后控制台编码由 stdout.encoding 决定，而它在 Windows 上默认跟随
+                      本地代码页（本机是 GBK/ASCII 混合），会让中文输出变成 "???"。
+                      注意：这个插件配置只影响本模块，父 pom 与其它模块一概不动。
+                    -->
+                    <argLine>-Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading
+                        -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

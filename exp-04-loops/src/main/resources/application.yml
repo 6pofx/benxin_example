@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: exp-04-loops
+  main:
+    banner-mode: off
+
+llm:
+  # 默认模型名 = 某个 LlmModel bean 的 name()（本示例全部来自 OfflineModelConfiguration）。
+  default-model: mock
+
+  agent:
+    # 默认 Loop 指向本模块自己写的 exp-decorate：演示"自定义 Loop 可以当默认"。
+    # 注解优先级（见 LoopsApplication 与 README）：
+    #   llm.agent.default-loop > @LlmLoop(defaultLoop = true) > "dsh-minimal"
+    default-loop: exp-decorate
+    # 注解里没写 maxSteps 时回落到这里
+    max-steps: 12
+    # 防呆硬上限：@LlmAgent(maxSteps = 100) 会被夹到这里（见 LoopBudgetDemo）。
+    # 取 12 而不是更小，是因为 plan-execute / staged 这类多阶段 Loop 本身就要 10 步上下 ——
+    # 夹得太狠会让它们全部以"预算耗尽"收尾，反而看不到"走完全程"这个特征。
+    hard-max-steps: 12
+    memory: true
+    # 关掉内置日志监听器：本示例要注册自己的 AgentListener（SubAgentAuditListener），
+    # 而 llmLoggingListener 带 @ConditionalOnMissingBean(AgentListener.class) —— 留着它就是"让位"。
+    logging-listener: false
+    approval-policy: on-request
+
+  tools:
+    # 打开内置工具：claude-code 的 todo_write、codex 的 apply_patch 演示都要用。
+    builtin-enabled: true
+    # 围栏**限制在本模块 target 之下**：即使模型乱写路径，也出不了这个目录。
+    workdir: target/sandbox
+    # 默认基线是只读三件套（read / glob / grep）；这里再点名两个：
+    #   todo_write —— claude-code 的待办链路要真跑；
+    #   task       —— 子代理「注解 subAgents + task 工具」这条装配方式要真跑。
+    # 注意 task **不在**默认基线里（BuiltinToolkit.READ_ONLY_TOOLS 只有 read/glob/grep），
+    # 不点名的话 Agent 的工具清单里根本不会有它，父侧也就永远派不出子代理。
+    enabled:
+      - todo_write
+      - task
+    # 写权限打开的是**沙箱闸门**，而它同时也会把内置 write / edit 带进工具清单（实测）：
+    #   - 必须开：本模块自带的 apply_patch 是写文件工具，要过沙箱那一关。
+    #     实测 allow-write=false 时报的是「沙箱拒绝执行: 工具 [apply_patch] 会修改本地文件」，
+    #     整个 codex 补丁演示一步都走不了。
+    #   - 副作用：BuiltinToolkit.activeToolNames() 一旦看到 allowWrite 为真就会**无条件**
+    #     加上 write / edit（enabled 是叠加而非白名单），所以 Agent 的工具清单里会多出这两个。
+    #     想只开闸门不放工具，只能自己包一层 BuiltinToolkit.Builder.disable("write", "edit")，
+    #     而 llm.tools.* 没有对应配置项 —— 纯配置做不到。这是跑通补丁演示所付的代价。
+    # 不打开 exec：bash 因此不会出现在工具清单里。
+    allow-write: true
+    allow-exec: false
+
+  # HTTP 端点默认关闭，本示例不需要
+  web:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"
