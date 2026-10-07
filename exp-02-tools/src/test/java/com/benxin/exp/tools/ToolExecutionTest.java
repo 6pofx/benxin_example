@@ -155,12 +155,15 @@ class ToolExecutionTest extends AbstractToolTest {
     }
 
     @Test
-    @DisplayName("AgentSession 参数被排除出 schema，但实际注入的是 null（只用 ToolContext.sessionId() 拿会话）")
-    void agentSessionParameterIsInjectedAsNull() {
+    @DisplayName("AgentSession 参数被排除出 schema，但 1.1.1 起真的注入了可用的会话视图（此前恒为 null）")
+    void agentSessionParameterIsInjected() {
+        // 1.1.0 时这里拿到的是 null（参数被认作"可注入"却硬编码成 null，见 FINDINGS 第 3 条）；
+        // 1.1.1 起注入的是真实会话，id() 就是本次运行的 sessionId。
         AgentResult result = runScripted("agent_session_probe", "{}", SESSION);
 
         String content = call(result, 0).result();
-        assertThat(content).startsWith("AgentSession 参数 = null");
+        assertThat(content).startsWith("AgentSession 参数 = " + SESSION);
+        assertThat(content).doesNotContain("AgentSession 参数 = null");
         assertThat(content).contains("ToolContext.sessionId() = " + SESSION);
     }
 

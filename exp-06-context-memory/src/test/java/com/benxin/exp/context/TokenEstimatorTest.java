@@ -27,17 +27,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TokenEstimatorTest extends AbstractContextMemoryTest {
 
     @Test
-    @DisplayName("默认估算的实际取值：中文 1 字 1 token，其余 4 字符 1 token，且至少算 1")
+    @DisplayName("默认估算的实际取值：中文 1 字 1 token，其余 4 字符向上取整")
     void defaultEstimatorValues() {
         assertThat(TokenEstimator.DEFAULT.estimate((String) null)).isZero();
         assertThat(TokenEstimator.DEFAULT.estimate("")).isZero();
-        // 纯中文是 2 个汉字 → 2 token，但实现是 cjk + max(1, other / 4)，
-        // other = 0 时仍会补上 1 —— 因此纯中文文本比"1 字 1 token"多算 1
-        assertThat(TokenEstimator.DEFAULT.estimate("你好")).isEqualTo(3);
+        // 纯中文就是"1 字 1 token"：2 个汉字 → 2。
+        // （修复前是 cjk + max(1, other / 4)，other = 0 时也补 1，于是多算 1）
+        assertThat(TokenEstimator.DEFAULT.estimate("你好")).isEqualTo(2);
         assertThat(TokenEstimator.DEFAULT.estimate("abcd")).isEqualTo(1);        // 4/4
-        assertThat(TokenEstimator.DEFAULT.estimate("abc")).isEqualTo(1);         // max(1, 0)
+        assertThat(TokenEstimator.DEFAULT.estimate("abc")).isEqualTo(1);         // (3+3)/4
         assertThat(TokenEstimator.DEFAULT.estimate(DemoText.ascii(900, "x"))).isEqualTo(225);
-        assertThat(TokenEstimator.DEFAULT.estimate("你好abc")).isEqualTo(3);      // 2 + max(1, 0)
+        assertThat(TokenEstimator.DEFAULT.estimate("你好abc")).isEqualTo(3);      // 2 + (3+3)/4
     }
 
     @Test
@@ -60,8 +60,8 @@ class TokenEstimatorTest extends AbstractContextMemoryTest {
     void messageLevelEstimateIncludesOverhead() {
         List<ChatMessage> one = List.of(ChatMessage.user("你好"));
         assertThat(tokenEstimator.estimate(one)).isEqualTo(12 + 2 + 8);
-        // 默认实现同样是 4 + 8 的固定开销，但 estimate("你好") 是 3（见上一个用例的 +1）
-        assertThat(TokenEstimator.DEFAULT.estimate(one)).isEqualTo(4 + 3 + 8);
+        // 默认实现同样是 4 + 8 的固定开销，estimate("你好") 现在是 2
+        assertThat(TokenEstimator.DEFAULT.estimate(one)).isEqualTo(4 + 2 + 8);
 
         List<ChatMessage> withParts = List.of(
                 ChatMessage.user(new TextPart("你好"), ImagePart.ofBase64("image/png", "AAAA")));
@@ -116,17 +116,19 @@ class TokenEstimatorTest extends AbstractContextMemoryTest {
     @Test
     @DisplayName("SummarizingCompactor 内部用的是构造时传入的估算器；无参构造用的是默认实现")
     void summarizingCompactorUsesItsOwnEstimator() {
-        // 2 条 1000 字符的长消息 + 4 条短消息：
-        //   默认估算 ≈ 592（低于内部预算 1024）→ 无参构造的压缩器原样返回、一次模型都不调
-        //   自定义估算 ≈ 1160（高于内部预算）→ 会真的去摘要，并且摘要能留下来
+        // tiny 窗口的输入预算是 (6000 − 4096) × 0.8 = 1523（插件 1.1.1 起压缩器与管理器统一口径）：
+        //   默认估算 ≈ 1092（低于 1523）→ 无参构造的压缩器原样返回、一次模型都不调
+        //   自定义估算 ≈ 2092（高于 1523）→ 会真的去摘要，并且摘要能留下来
+        // 两条长消息刻意取 2000 字符，让"两个估算器"刚好落在 1523 的两侧 ——
+        // 这个体量是算出来的：默认 1000/2 = 500、自定义 2000/2 = 1000（每条再加 12 的固定开销）。
         List<ChatMessage> history = new ArrayList<>();
-        history.add(ChatMessage.user(DemoText.ascii(1000, "long-a")));
-        history.add(ChatMessage.assistant(DemoText.ascii(1000, "long-b")));
+        history.add(ChatMessage.user(DemoText.ascii(2000, "long-a")));
+        history.add(ChatMessage.assistant(DemoText.ascii(2000, "long-b")));
         for (int i = 0; i < 4; i++) {
             history.add(ChatMessage.user(DemoText.ascii(20, "short" + i)));
         }
-        assertThat(TokenEstimator.DEFAULT.estimate(history)).isLessThanOrEqualTo(1024);
-        assertThat(tokenEstimator.estimate(history)).isGreaterThan(1024);
+        assertThat(TokenEstimator.DEFAULT.estimate(history)).isLessThanOrEqualTo(1523);
+        assertThat(tokenEstimator.estimate(history)).isGreaterThan(1523);
 
         tinyModel.reset();
         List<ChatMessage> byDefaultCtor = new SummarizingCompactor().compact(history, tinyModel, 4);

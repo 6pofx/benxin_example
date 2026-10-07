@@ -223,14 +223,16 @@ class MonitorListenerTest extends ObservabilityTestSupport {
     }
 
     @Test
-    @DisplayName("实测口径：模型抛异常时 onError 会被广播两次（Loop 基类一次 + Agent 一次）")
-    void errorCallbackIsBroadcastTwice() {
+    @DisplayName("模型抛异常时 onError 只广播一次（1.1.1 修复：此前 Loop 与 Agent 各广播一次）")
+    void errorCallbackIsBroadcastOnce() {
         assertThatThrownBy(() -> fail.ask("再失败一次")).isInstanceOf(ModelException.class);
 
-        // 这不是断言"应该如此"，而是把实测行为钉住并留档：
-        // AbstractAgentLoop.run() 与 DefaultAgent.run() 都会广播 onError。
-        // 监听器如果按次数计费/告警，需要自己去重（例如按 error 类型 + 时间窗）。
-        assertThat(monitorListener.count("onError")).isEqualTo(2);
+        // 1.1.0 时 AbstractAgentLoop.run() 与 DefaultAgent.run() 都会广播，于是同一次失败
+        // 会到监听器两次（本工程上报为 FINDINGS 第 11 条）——按次数计费/告警的监听器必须自己去重。
+        // 1.1.1 起只在最外层广播一次，计费与告警可以直接按次数来。
+        assertThat(monitorListener.count("onError"))
+                .as("1.1.1 修复：同一次失败只报一次")
+                .isEqualTo(1);
     }
 
     // ------------------------------------------------------------------

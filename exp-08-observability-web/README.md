@@ -158,10 +158,11 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8，或�
    而多个**自定义**监听器之间不互斥，会被 `AgentBuilder` 用 `CompositeListener.of(...)` 合成一条广播链。
 2. **`onTextDelta` 由"模型支不支持流式"决定，与调用方传不传 `LlmStreamHandler` 无关。**
    传了 handler 只是多一条私有出口（两条通道并列、收到同一批增量）。
-   顺带钉住一个死配置：`@LlmAgent(stream = true)` 与 `llm.agent.stream` **没有任何读取点**，
-   写了也不会让调用方的调用变成流式。
-3. **`onError` 会被广播两次**（`AbstractAgentLoop.run()` + `DefaultAgent.run()`）。
-   监听器如果按次数计费/告警，需要自己去重（例如按异常类型 + 时间窗）。
+   顺带说明一个**曾经**的死配置：`@LlmAgent(stream = true)` 与 `llm.agent.stream`
+   在 1.1.1 起有了读取点 —— `LlmAgentController.chat` 会按它决定返回 SSE 还是 JSON
+   （1.1.0 时确实没有任何读取点，见根目录 `FINDINGS.md` 第 2 条）。
+3. **`onError` 只广播一次**（1.1.1 修复；1.1.0 时 `AbstractAgentLoop.run()` 与
+   `DefaultAgent.run()` 各广播一次，监听器按次数计费/告警必须自己去重 —— 见 FINDINGS 第 11 条）。
 4. **失败的运行不产生 `onAgentEnd`**（对应"不往 `agent_run` 表里写行"），只有 `onError`。
 5. **子代理的回调会广播到同一批监听器上**，而且 `onSubAgentEnd` 之前会先看到子代理**自己**的
    `onAgentEnd`。所以"最后一条 `onAgentEnd` 才是父代理的"——用 `indexOf` 去找会得到相反的结论，

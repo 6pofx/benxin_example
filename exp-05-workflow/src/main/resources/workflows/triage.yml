@@ -97,9 +97,10 @@ nodes:
   # ---- 回边循环的"闸门"：set + tool 组成循环体，一个 token 都不花 ----
   - id: check
     type: branch
-    # ⚠️ 这里刻意不用 ${rounds:-0} 这种写法：**条件表达式里的 ${x:-兜底} 不生效**
-    #    （:- 只有模板渲染 Templates.render 才认，Conditions 会拿 "rounds:-0" 整串去查表，
-    #    查不到就是 null ⇒ 比较直接判 false）。要兜底就在上游 set 节点里先播种。
+    # 这里的 ${rounds:-0} 是"有兜底值"的写法：rounds 由上游 report 节点播种，
+    # 所以兜底平时用不上；它写在这里是为了说明**条件表达式里的 :- 在 1.1.1 起是生效的**。
+    # （1.1.0 会把 "rounds:-0" 整串当变量名去查表 ⇒ null ⇒ 比较直接判 false，
+    #   那条边永远不成立且不报错 —— 见本工程 FINDINGS 第 13 条。）
     description: 判断报告里是否还带着紧急标记、且回炉次数没用完
 
   - id: bump
@@ -147,10 +148,11 @@ edges:
     to: check
 
   # 回边：把边指回上游就是循环，不需要任何专门的循环节点。
-  # 条件里同时用到了 matches（正则，右操作数按原文截取）与数值比较 —— 两者都在这里真的生效。
+  # 条件里同时用到了 matches（正则，右操作数按原文截取）、带兜底值的变量引用与数值比较 ——
+  # 三者在 1.1.1 上都真的生效（1.1.0 时 ${rounds:-0} 恒为 false，回边一圈都转不动）。
   - from: check
     to: bump
-    when: "${report} matches (?i)紧急 and ${rounds} <= 2"
+    when: "${report} matches (?i)紧急 and ${rounds:-0} <= 2"
   - from: check
     to: done
 

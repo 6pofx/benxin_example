@@ -156,51 +156,44 @@ class OfflinePathTest {
     }
 
     @Test
-    @DisplayName("陷阱：toBuilder().model(\"名字\") 会被静默忽略 —— 派生副本必须传模型实例")
-    void modelNameOverloadIsIgnoredOnDerivedBuilder() {
-        // ① 按直觉的写法：结果是**继续用原模型**（这里就是离线的 mock）。
-        //    原因：toBuilder() 已经把原模型实例放进了 builder，而 DefaultAgent 的解析顺序是
-        //    "有实例就用实例，没实例才按名字查注册表"，于是字符串重载永远不会被读到。
+    @DisplayName("toBuilder().model(\"名字\") 与 loop(\"名字\") 都能换（1.1.1 修复：两个重载后来者胜）")
+    void nameOverloadsWorkOnDerivedBuilder() {
+        // 1.1.0 时两者都会被静默忽略（toBuilder() 已经把实例放进 builder，DefaultAgent 实例优先）——
+        // 本工程上报为 FINDINGS 第 30 条；当时"真实模型用例全绿"其实一次都没打到 LM Studio。
+        // 1.1.1 起 model(String)/loop(String) 会把实例置空，后来者胜。
         com.benxin.llm.core.agent.Agent byName = agentRegistry.get("localAssistant")
-                .toBuilder().model("local-lmstudio").build();
+                .toBuilder().model("local-lmstudio").loop("react").build();
         assertThat(byName.model().name())
-                .as("字符串重载在派生副本上无效（这是实测行为，见 FINDINGS.md 问题 30）")
-                .isEqualTo("mock");
-
-        // ② 正确写法：传模型实例
-        com.benxin.llm.core.agent.Agent byInstance = agentRegistry.get("localAssistant")
-                .toBuilder().model(modelRegistry.get("local-lmstudio")).build();
-        assertThat(byInstance.model().name()).isEqualTo("local-lmstudio");
-    }
-
-    @Test
-    @DisplayName("陷阱：loop(\"名字\") 在派生副本上同样被忽略（与 model 同一个根因）")
-    void loopNameOverloadIsAlsoIgnored() {
-        com.benxin.llm.core.agent.Agent byName = agentRegistry.get("localAssistant")
-                .toBuilder().loop("react").build();
+                .as("按名字换模型在派生副本上生效")
+                .isEqualTo("local-lmstudio");
         assertThat(byName.loop().name())
-                .as("loop(String) 在派生副本上无效（实测行为，见 FINDINGS.md 问题 30）")
-                .isEqualTo("dsh-minimal");
+                .as("按名字换 Loop 在派生副本上生效")
+                .isEqualTo("react");
 
+        // 传实例同样可行 —— 两种写法等价，按喜好选
         com.benxin.llm.core.agent.Agent byInstance = agentRegistry.get("localAssistant")
-                .toBuilder().loop(loopRegistry.get("react")).build();
+                .toBuilder().model(modelRegistry.get("local-lmstudio"))
+                .loop(loopRegistry.get("react")).build();
+        assertThat(byInstance.model().name()).isEqualTo("local-lmstudio");
         assertThat(byInstance.loop().name()).isEqualTo("react");
     }
 
     @Test
-    @DisplayName("陷阱：toBuilder() 不携带监听器 —— 派生副本的真实调用不会进统计，必须显式补 listener")
-    void derivedAgentLosesListeners() {
+    @DisplayName("toBuilder() 会带上监听器（1.1.1 修复）：派生副本的运行照样进统计")
+    void derivedAgentKeepsListeners() {
+        // 1.1.0 时 toBuilder() 漏了 .listener(...)，派生副本的可观测性静默消失
+        // （本工程上报为 FINDINGS 第 31 条）；1.1.1 补齐后这里应当是 1。
         metrics.reset();
-        com.benxin.llm.core.agent.Agent without = agentRegistry.get("localAssistant").toBuilder().build();
-        without.call("自我介绍", "derived-no-listener", null);
+        com.benxin.llm.core.agent.Agent derived = agentRegistry.get("localAssistant").toBuilder().build();
+        derived.call("自我介绍", "derived-listener", null);
         assertThat(metrics.runCount())
-                .as("派生副本默认没有监听器（实测行为，见 FINDINGS.md 问题 31）")
-                .isZero();
+                .as("派生副本继承了原 Agent 的监听器")
+                .isEqualTo(1);
 
+        // 再派生一层也不会丢
         metrics.reset();
-        com.benxin.llm.core.agent.Agent with = agentRegistry.get("localAssistant").toBuilder()
-                .listener(metrics).build();
-        with.call("自我介绍", "derived-with-listener", null);
+        com.benxin.llm.core.agent.Agent twice = derived.toBuilder().model("mock").build();
+        twice.call("自我介绍", "derived-twice", null);
         assertThat(metrics.runCount()).isEqualTo(1);
     }
 

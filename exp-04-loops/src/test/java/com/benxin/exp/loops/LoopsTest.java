@@ -668,16 +668,22 @@ class LoopsTest {
     }
 
     @Test
-    @DisplayName("AgentAttributes：SYSTEM_PROMPT / SESSION_ID / AGENT_NAME 三个键都没有写入点")
-    void sessionAndAgentNameKeysAreNeverWritten() {
+    @DisplayName("AgentAttributes：1.1.1 起 SESSION_ID / AGENT_NAME 会被真的写进运行属性")
+    void sessionAndAgentNameKeysAreWritten() {
         AgentResult result = genericAgent.ask("你好");
 
-        // 这三条是被记到 README「插件问题」里的同一类问题：键名在 AgentAttributes 里定义了，
-        // 但框架内部没有任何一处往它们写值。真实的会话与 Agent 名走 AgentResult 自己的字段。
+        // 1.1.0 时这两个键"在 AgentAttributes 里定义了、框架内却没有任何写入点"，
+        // attributes() 里查不到它们（本工程上报为 FINDINGS 第 24 条）。
+        // 1.1.1 起运行伊始就播种，于是运维/审计代码可以直接按常量取值。
+        assertThat(result.attributes())
+                .containsEntry(AgentAttributes.SESSION_ID, AgentNames.GENERIC + "-default");
+        assertThat(result.attributes())
+                .containsEntry(AgentAttributes.AGENT_NAME, AgentNames.GENERIC);
+
+        // SYSTEM_PROMPT 仍然只在"方法级 @SystemPrompt"时才写（本 Agent 没有声明），所以这里没有它
         assertThat(result.attributes()).doesNotContainKey(AgentAttributes.SYSTEM_PROMPT);
-        assertThat(result.attributes()).doesNotContainKey(AgentAttributes.SESSION_ID);
-        assertThat(result.attributes()).doesNotContainKey(AgentAttributes.AGENT_NAME);
-        // 真实的会话与 Agent 名走 AgentResult 自己的字段
+
+        // AgentResult 自己的字段照旧是权威来源，两处口径一致
         assertThat(result.sessionId()).isEqualTo(AgentNames.GENERIC + "-default");
         assertThat(result.agentName()).isEqualTo(AgentNames.GENERIC);
     }

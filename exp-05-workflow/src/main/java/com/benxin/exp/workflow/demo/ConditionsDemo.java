@@ -28,8 +28,10 @@ import java.util.function.Function;
  *
  * <p>{@link #pitfalls()} 那一组专门收"按直觉会猜错"的口径，包括两处容易误判的地方：
  * {@code exists} 不是"非空"，{@code matches} 的右操作数按原文截取（与 {@code and}/{@code or}/{@code )} 相邻要加引号）；
- * 以及一条实测出来的坑：<b>条件表达式里的 {@code ${x:-兜底}} 不生效</b>
- * （{@code :-} 只有 {@link com.benxin.llm.core.workflow.Templates#render} 才认）。</p>
+ * 以及一条**曾经踩过、1.1.1 已修复**的口径：条件表达式里的 {@code ${x:-兜底}}。
+ * 1.1.0 会把 {@code missingValue:-0} 整串当成变量名去查表 ⇒ 查到 null ⇒ 比较恒为假、
+ * 不报错也不警告（那条边永远不成立）；1.1.1 起 {@code :-} 按与模板一致的语义拆分，
+ * 兜底值按字面量解析。示例保留这组断言，就是为了把这次行为变更钉成可回归的证据。</p>
  */
 public final class ConditionsDemo {
 
@@ -151,12 +153,18 @@ public final class ConditionsDemo {
         rows.add(new Row("matches 引号", "${log} matches \"(?i)error and\"", seed, false));
         // ③ not contains 是支持的（前缀否定），别把它当成"没实现"而绕远路
         rows.add(new Row("not contains", "${log} not contains 异常", seed, true));
-        // ④ ★ 条件表达式里的 ${x:-兜底} **不生效**：":-" 只有模板渲染才认，
-        //    Conditions 会拿 "missingValue:-0" 这个整串去查表 ⇒ null ⇒ 比较判 false。
-        //    这与"模板里带兜底值"的直观相反，triage.yml 的循环条件就踩过它。
-        rows.add(new Row("条件里 :- 不生效", "${missingValue:-0} <= 2", seed, false));
-        rows.add(new Row("条件里 :- 不生效", "${missingValue:-有兜底} is empty", seed, true));
-        rows.add(new Row("条件里 :- 不生效", "${missingValue:-1} == 1", seed, false));
+        // ④ ★ 条件表达式里的 ${x:-兜底}：**1.1.1 起生效**。
+        //    1.1.0 的行为是把 "missingValue:-0" 整串当变量名查表 ⇒ null ⇒ 比较恒为 false，
+        //    那条边永远不成立且不报错 —— 就是本工程 FINDINGS 第 13 条。
+        //    1.1.1 改为按与模板一致的语义拆分 ":-"，兜底值按字面量解析（数字 / true / false / null / 其余当字符串）。
+        rows.add(new Row("条件里 :- 兜底", "${missingValue:-0} <= 2", seed, true));
+        rows.add(new Row("条件里 :- 兜底", "${missingValue:-1} == 1", seed, true));
+        rows.add(new Row("条件里 :- 兜底", "${missingValue:-有兜底} is not empty", seed, true));
+        rows.add(new Row("条件里 :- 兜底", "${missingValue:-false}", seed, false));
+        // 有值时兜底不参与：status 有值，所以比较的是 "done"
+        rows.add(new Row("条件里 :- 兜底", "${status:-unknown} == done", seed, true));
+        // 没有兜底时语义不变：仍然是 null
+        rows.add(new Row("条件里 :- 兜底", "${missingValue} exists", seed, false));
         return List.copyOf(rows);
     }
 

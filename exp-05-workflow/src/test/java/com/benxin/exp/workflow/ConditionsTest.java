@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>表由 {@link ConditionsDemo#rows()} 提供，演示与测试共用同一份数据 ——
  * 演示里打印出来的每一行，在这里都被钉成可回归的用例。</p>
  *
- * <p>所有断言都反映<b>实测行为</b>：凡与文档/直觉不一致的地方（例如条件表达式里的
- * {@code ${x:-兜底}} 不生效），都在下面单独写了用例，并在最终汇报的「插件问题」里列出。</p>
+ * <p>所有断言都反映<b>实测行为</b>：凡与文档/直觉不一致的地方都在下面单独写了用例。
+ * 其中"条件表达式里的 {@code ${x:-兜底}}"这一条经历了两个版本：
+ * <b>1.1.0 不生效</b>（本工程上报为 FINDINGS 第 13 条）→ <b>1.1.1 修复</b>，
+ * 于是对应的断言也从"钉住旧行为"改成了"钉住新行为"，顺便变成插件升级的回归测试。</p>
  */
 @DisplayName("条件表达式 Conditions 全谱")
 class ConditionsTest {
@@ -45,7 +47,7 @@ class ConditionsTest {
 
     @ParameterizedTest(name = "[{index}] {0} → {1}")
     @MethodSource("pitfalls")
-    @DisplayName("几处容易猜错的口径：exists ≠ 非空、matches 的引号规则、条件里的 :- 不生效")
+    @DisplayName("几处容易猜错的口径：exists ≠ 非空、matches 的引号规则、条件里的 :- 兜底（1.1.1 起生效）")
     void evaluatesPitfalls(ConditionsDemo.Row row) {
         assertThat(Conditions.evaluate(row.expression(), row.lookup()))
                 .as("%s（期望 %s）", row.expression(), row.expected())
@@ -68,26 +70,33 @@ class ConditionsTest {
     }
 
     @Test
-    @DisplayName("★ 实测：条件表达式里的 ${x:-兜底} 不生效（:- 只有模板渲染才认），与 triage.yml 踩到的一致")
-    void fallbackInsideConditionsDoesNotWork() {
+    @DisplayName("★ 条件表达式里的 ${x:-兜底}：1.1.1 起生效（1.1.0 会把整串当变量名，那条边永远不成立）")
+    void fallbackInsideConditionsWorks() {
         Function<String, Object> lookup = ConditionsDemo.seededLookup();
 
-        // Conditions 把 "missingValue:-0" 当成**变量名**去查表，查不到就是 null，
-        // 于是数值比较判 false —— 而不是像写的人期望的那样拿 0 去比。
-        assertThat(Conditions.evaluate("${missingValue:-0} <= 2", lookup)).isFalse();
-        assertThat(Conditions.evaluate("${missingValue:-1} == 1", lookup)).isFalse();
-        // null 的语义仍然是 null：带兜底的写法也一样 is empty / missing
-        assertThat(Conditions.evaluate("${missingValue:-有兜底} is empty", lookup)).isTrue();
-        assertThat(Conditions.evaluate("${missingValue:-有兜底} exists", lookup)).isFalse();
+        // 1.1.1：":-" 按与模板一致的语义拆分，兜底值按字面量解析 —— 数值比较拿 0 去比
+        assertThat(Conditions.evaluate("${missingValue:-0} <= 2", lookup)).isTrue();
+        assertThat(Conditions.evaluate("${missingValue:-1} == 1", lookup)).isTrue();
+        assertThat(Conditions.evaluate("${missingValue:-有兜底} is not empty", lookup)).isTrue();
+        // 兜底为 false 时整个表达式就是 false（字面量解析，不是"非空字符串"）
+        assertThat(Conditions.evaluate("${missingValue:-false}", lookup)).isFalse();
+        // 变量有值时兜底不参与
+        assertThat(Conditions.evaluate("${status:-unknown} == done", lookup)).isTrue();
+        // 不带兜底时语义不变：null 仍然是 null
+        assertThat(Conditions.evaluate("${missingValue} exists", lookup)).isFalse();
+        assertThat(Conditions.evaluate("${missingValue:-有兜底} exists", lookup))
+                .as("给了兜底值就不再是 null ⇒ exists 成立")
+                .isTrue();
 
-        // 对照：同一个占位符交给模板渲染，兜底值就生效了
+        // 与模板渲染保持同一套语义（这正是 1.1.1 的对齐目标）
         assertThat(com.benxin.llm.core.workflow.Templates.render("${missingValue:-0} <= 2", lookup))
                 .isEqualTo("0 <= 2");
         assertThat(com.benxin.llm.core.workflow.Templates.render("${missingValue:-有兜底}", lookup))
                 .isEqualTo("有兜底");
 
-        // 所以循环计数器这类变量必须在**上游 set 节点先播种**，不能指望条件里的 :-。
-        // 这不是示例的写法偏好，而是本次实测出来的插件口径（见汇报的「插件问题」）。
+        // 补充说明：triage.yml 里仍然用"上游 set 节点播种计数器"的写法 ——
+        // 它表达的是"循环次数由谁决定"，与能不能在条件里写兜底无关；
+        // 1.1.0 时它是**被迫**绕开，1.1.1 之后是**可选**风格。
     }
 
     @Test

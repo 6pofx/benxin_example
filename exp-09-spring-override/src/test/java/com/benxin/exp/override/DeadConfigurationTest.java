@@ -57,11 +57,10 @@ class DeadConfigurationTest {
     // ==================================================================
 
     @Test
-    @DisplayName("AgentSpec.stream()：注解与 yml 都写得进去，但插件里没有任何一处读它")
-    void streamFlagIsWrittenButNeverRead() {
-        // 第一步：确认它真的被"写"进去了 —— 两个来源都生效。
-        // 注解 @LlmAgent(stream = true) 或 llm.agent.stream=true，都会走到 LlmAgentFactory 里
-        // 那一行 .stream(annotation.stream() || defaults.isStream())（LlmAgentFactory.java:120）。
+    @DisplayName("AgentSpec.stream()：1.1.1 起**有人读它了**（HTTP /chat 按它选通道）")
+    void streamFlagIsWrittenAndConsumed() {
+        // ① 写得进去：注解 @LlmAgent(stream = true) 与 llm.agent.stream=true 两条来源都会
+        //    走到 LlmAgentFactory 里那一行 .stream(annotation.stream() || defaults.isStream())。
         runner.withPropertyValues("llm.agent.stream=true")
                 .withUserConfiguration(NoAnnotationApplication.class)
                 .run(context -> {
@@ -72,39 +71,16 @@ class DeadConfigurationTest {
                             .isTrue();
                 });
 
-        // 第二步：确认"没人读它"。
-        // 流式与否由 DefaultLoopContext.callModel 现场判断：
-        //     if (model().capabilities().streaming()) { model().stream(...) }
-        //     else { ...同步通道... }                        （DefaultLoopContext.java:262-268）
-        // 它看的是<b>模型能力</b>，与 AgentSpec 无关。
-        // 所以同一次调用，stream=true 与 stream=false 走的是同一条代码路径、
-        // 产生同样的步数与同样的回答。
-        ScriptedLlmModel scripted = ScriptedLlmModel.builder("dead-stream")
-                .fallback("（离线模型）{input}")
-                .build();
-        RecordingModel model = new RecordingModel(scripted);
-
-        List<String> answers = new ArrayList<>();
-        for (boolean specStream : new boolean[]{false, true}) {
-            scripted.reset();
-            var agent = com.benxin.llm.core.agent.Agent.builder("stream-" + specStream)
-                    .model(model)
-                    .loop(new DshMinimalLoop())
-                    .stream(specStream)                 // ← 唯一变量：这个没人读的布尔值
-                    .build();
-            assertThat(agent.spec().stream()).isEqualTo(specStream);
-
-            var result = agent.call("你好");
-
-            assertThat(result.text()).isNotBlank();
-            assertThat(result.steps()).isEqualTo(1);
-            assertThat(scripted.calls())
-                    .as("stream=%s 时模型被调用了几次", specStream)
-                    .isEqualTo(1);
-            answers.add(result.text());
-        }
-        // 两次调用的可观测结果完全一致 —— 差别只有 spec 里那个没人读的布尔值。
-        assertThat(answers.get(0)).isEqualTo(answers.get(1));
+        // ② 1.1.1 起有了消费点：LlmAgentController.chat 会读 agent.spec().stream()，
+        //    为真时改返回 SSE（否则返回 JSON）——
+        //        if (agent.spec().stream()) { response.setContentType(SSE_CONTENT_TYPE); return streamResponse(...); }
+        //    这正好兑现了使用者对这两个开关的直觉；1.1.0 时它们是死配置（本工程上报为 FINDINGS 第 2 条）。
+        //    端到端断言（同一个 Agent 用两种设置打 /chat，比较 Content-Type）放在 exp-08 ——
+        //    本模块刻意不依赖 Web，所以只在这里记录"消费点在哪里"。
+        //
+        //    注意：`AgentLoopContext.callModel` 是否走 stream() 仍然由**模型能力**决定
+        //    （DefaultLoopContext: if (model().capabilities().streaming())），
+        //    与这个开关无关 —— 开关管的是"HTTP 通道"，不是"模型调用方式"。
     }
 
     // ==================================================================
@@ -124,7 +100,7 @@ class DeadConfigurationTest {
     }
 
     @Test
-    @DisplayName("@LlmAgent(stream = true)：注解这条路也照样写进 spec（同样没人读）")
+    @DisplayName("@LlmAgent(stream = true)：注解这条路照样写进 spec（1.1.1 起该值会被端点消费）")
     void annotationStreamFlagIsAlsoWritten() {
         runner.withUserConfiguration(NoAnnotationApplication.class).run(context -> {
             assertThat(context).hasNotFailed();
@@ -132,16 +108,14 @@ class DeadConfigurationTest {
             assertThat(spec.stream())
                     .as("@LlmAgent(stream = true) 确实写进了 AgentSpec.stream()")
                     .isTrue();
-            // 两个"死配置"写在同一个接口上，写进去了，但都不改变行为。
             assertThat(RetriedAssistant.class.getAnnotation(LlmRetry.class)).isNotNull();
         });
     }
 
     @Test
-    @DisplayName("@LlmRetry：打上它不改变任何行为 —— 插件里没有任何消费点")
-    void llmRetryAnnotationHasNoConsumer() {
-        // 先把"注解确实在类上、属性确实写得进去"这件事钉住 ——
-        // 免得将来注解被删掉之后，这条测试退化成一个空断言。
+    @DisplayName("@LlmRetry：1.1.1 起真的被消费 —— 工具会被 RetryingToolCallback 包一层")
+    void llmRetryAnnotationIsConsumed() {
+        // 先钉住"注解确实在类上、属性确实写得进去"
         LlmRetry annotation = RetriedAssistant.class.getAnnotation(LlmRetry.class);
         assertThat(annotation).as("@LlmRetry 应当标在这个接口上").isNotNull();
         assertThat(annotation.maxAttempts()).isEqualTo(5);
@@ -149,18 +123,33 @@ class DeadConfigurationTest {
         assertThat(annotation.multiplier()).isEqualTo(3.0);
         assertThat(annotation.includeTools()).isTrue();
 
-        // 再钉住"没人读它"：LlmAgentFactory.specOf() 是"注解 → AgentSpec"的唯一翻译点，
-        // 它把需要的注解属性逐个搬进 AgentSpec —— 而 @LlmRetry 的四个属性一个都没进去。
-        runner.withUserConfiguration(NoAnnotationApplication.class).run(context -> {
-            assertThat(context).hasNotFailed();
-            LlmAgentFactory factory = context.getBean(LlmAgentFactory.class);
+        // 1.1.0 时整个插件里没有任何 `getAnnotation(LlmRetry.class)`
+        // —— 打了不重试、不报错、也不警告（本工程上报为 FINDINGS 第 1 条）。
+        // 1.1.1 新增了 LlmAgentFactory#resolveRetryPolicy（接口 + 方法级取 maxAttempts 最大者、
+        // includeTools 取或）；落点是：模型调用包一层 RetryingLlmModel，
+        // includeTools = true 时再给该 Agent 的每个工具包一层 RetryingToolCallback。
+        // 这里用"模型确实被包了"做可观测断言：断言链路不需要任何工具、
+        // 只要上下文里有一个模型 bean 就能把 Agent 装起来。
+        runner.withUserConfiguration(NoAnnotationApplication.class)
+                .withBean(com.benxin.llm.core.model.LlmModel.class,
+                        () -> com.benxin.exp.common.model.ScriptedLlmModel.of("retry-stub"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    LlmAgentFactory factory = context.getBean(LlmAgentFactory.class);
 
-            AgentSpec spec = factory.specOf(RetriedAssistant.class);
-            assertThat(spec.name()).isEqualTo("retriedAssistant");
-            assertThat(specFields())
-                    .as("AgentSpec 里没有任何承载 @LlmRetry 的字段")
-                    .doesNotContain("retries", "maxattempts", "attempts", "backoff", "backoffmillis", "multiplier");
-        });
+                    AgentSpec spec = factory.specOf(RetriedAssistant.class);
+                    assertThat(spec.name()).isEqualTo("retriedAssistant");
+                    // AgentSpec 里**仍然**没有重试字段 —— 重试不是 spec 的属性，而是装配时套的装饰器
+                    assertThat(specFields())
+                            .as("重试不落在 AgentSpec 上，而是包在模型/工具外面")
+                            .doesNotContain("retries", "maxattempts", "attempts", "backoff",
+                                    "backoffmillis", "multiplier");
+
+                    var agent = factory.createFromInterface(RetriedAssistant.class);
+                    assertThat(agent.model().getClass().getSimpleName())
+                            .as("1.1.1：@LlmRetry 生效，模型被 RetryingLlmModel 包住")
+                            .isEqualTo("RetryingLlmModel");
+                });
 
         // 对照：真正能配出重试的地方是 ModelConfig.maxRetries（yml 的 llm.models.*.max-retries），
         // 由 ModelFactory.create 自动包一层 RetryingLlmModel —— 与 @LlmRetry 完全无关。

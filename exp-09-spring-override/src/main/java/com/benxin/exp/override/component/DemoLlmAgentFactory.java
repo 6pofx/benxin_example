@@ -36,6 +36,12 @@ import java.util.List;
  * 拦截器必须走 {@link LlmInterceptorChain}（已按 {@code @LlmGuard} 包好并排过序），
  * 直接用 {@code ObjectProvider<AgentInterceptor>} 会拿到<b>未包装</b>的原始 bean，
  * 于是 {@code @LlmGuard(agents = {...})} 的范围声明会彻底失效。</p>
+ *
+ * <p><b>1.1.1 的一处构造签名变更</b>：{@code ToolSandbox} 与 {@code ApprovalHandler}
+ * 从"裸类型"改成了 {@code ObjectProvider<...>}（本工程上报为 FINDINGS 第 28 条）——
+ * 目的是支持"按 Agent 选沙箱/审批器"。本类因此也跟着改：参数类型换成
+ * {@code ObjectProvider}，并用 {@link #fixed(Object)} 把已经确定的实例包进去。
+ * 这也说明"覆盖 LlmAgentFactory"这个切面会跟着插件的构造签名走，属于预期内的耦合。</p>
  */
 public class DemoLlmAgentFactory extends LlmAgentFactory {
 
@@ -49,16 +55,61 @@ public class DemoLlmAgentFactory extends LlmAgentFactory {
                                ContextManager contextManager,
                                MemoryStore memoryStore,
                                SystemPromptProvider systemPromptProvider,
-                               ToolSandbox sandbox,
-                               ApprovalHandler approvalHandler,
+                               ObjectProvider<ToolSandbox> sandboxProvider,
+                               ObjectProvider<ApprovalHandler> approvalHandlerProvider,
                                AgentRegistry agentRegistry,
                                ObjectProvider<LlmInterceptorChain> interceptorChainProvider,
                                ObjectProvider<AgentListener> listenerProvider) {
         super(properties, modelRegistry, loopRegistry, toolCatalog, contextManager, memoryStore,
-                systemPromptProvider, sandbox, approvalHandler, agentRegistry,
+                systemPromptProvider, sandboxProvider, approvalHandlerProvider, agentRegistry,
                 interceptorChainProvider, listenerProvider);
     }
 
+    /**
+     * 把一个已经确定的实例包成 {@link ObjectProvider}。
+     *
+     * <p>{@code ObjectProvider} 只有 {@code getObject()} 系列是抽象方法，
+     * {@code getIfAvailable()} / {@code getIfUnique()} 都有默认实现，所以两个方法就够了。</p>
+     */
+    public static <T> ObjectProvider<T> fixed(T value) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject() {
+                return value;
+            }
+
+            @Override
+            public T getObject(Object... args) {
+                return value;
+            }
+        };
+    }
+
+    /**
+     * 记录"这个工厂装配了哪些 Agent"，并把装配工作交回给父类。
+     *
+     * <p><b>为什么覆写的是 {@code createFromInterface} 而不是 {@code create(...)}：</b>
+     * 1.1.0 时声明式路径最终会走到公开的
+     * {@code create(AgentSpec, ToolRegistry, List)}，覆写它就能插一脚。
+     * 1.1.1 为了支持 {@code @LlmRetry}（FINDINGS 第 1 条）新增了一个<b>私有</b>的
+     * {@code create(spec, tools, interceptors, retry)} 重载，而 {@code createFromInterface}
+     * 现在直接调那个私有的 —— 于是子类覆写的公开重载<b>被静默绕过</b>（本工程已把它记为 FINDINGS 第 33 条）。
+     * 公开的重载只剩"外部直接调用"这一条路。
+     *
+     * <p>因此这里改成覆写同样是 public 的 {@code createFromInterface}：它是声明式路径的入口，
+     * 位置更靠前，也就不受内部重载怎么拆分的影响。</p>
+     */
+    @Override
+    public Agent createFromInterface(Class<?> agentInterface) {
+        builtAgents.add(specOf(agentInterface).name());
+        return super.createFromInterface(agentInterface);
+    }
+
+    /**
+     * 保留对公开 3 参 {@code create} 的覆写：<b>直接</b>调它的调用方（程序化装配）依然会被记下来。
+     *
+     * <p>注意它不再承担"记录声明式装配"的职责 —— 那条路已经不走这里了。</p>
+     */
     @Override
     public Agent create(AgentSpec spec, com.benxin.llm.core.tool.ToolRegistry tools,
                         List<AgentInterceptor> extraInterceptors) {

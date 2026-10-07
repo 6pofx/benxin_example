@@ -95,6 +95,40 @@ class WorkflowEngineTest {
     }
 
     @Test
+    @DisplayName("★ 分支条件里的 ${x:-兜底}：1.1.1 起生效，那条边不再永远不成立")
+    void fallbackInsideBranchConditionsWorks() {
+        // retryCount 从头到尾没有任何节点写过它 —— 兜底值 0 是它唯一的值来源。
+        // 1.1.0 时 Conditions 会把 "retryCount:-0" 整串当变量名 ⇒ null ⇒ 条件恒为 false，
+        // 于是永远落到默认边 first；1.1.1 起按字面量解析兜底值，条件成立走 retry。
+        // （这是本工程 FINDINGS 第 13 条的端到端复现：从"静默死分支"变成"按写的走"。）
+        WorkflowDefinition definition = WorkflowDefinition.builder("fallback-branch")
+                .node(WorkflowNode.builder("begin").type(NodeType.START).prompt("${input}").build())
+                .node(WorkflowNode.builder("route").type(NodeType.BRANCH).build())
+                .node(agent("retry", "回炉：${begin}"))
+                .node(agent("first", "首次通过：${begin}"))
+                .node(end("done", "${last}"))
+                .edge("begin", "route")
+                .edge("route", "retry", "${retryCount:-0} <= 2")
+                .edge("route", "first")
+                .edge("retry", "done")
+                .edge("first", "done")
+                .build();
+
+        FakeWorkflowRuntime runtime = new FakeWorkflowRuntime()
+                .output("retry", "走了兜底分支")
+                .output("first", "走了默认分支");
+        WorkflowState state = new WorkflowState("任务");
+        WorkflowRun run = new WorkflowEngine().run(definition, state, runtime);
+
+        assertThat(run.visited()).containsSubsequence("route", "retry");
+        assertThat(run.visited()).doesNotContain("first");
+        assertThat(run.output()).isEqualTo("走了兜底分支");
+        // 再对照一次语义：兜底值参与的是**数值**比较，不是字符串比较
+        assertThat(Conditions.evaluate("${retryCount:-0} <= 2", state.lookup())).isTrue();
+        assertThat(Conditions.evaluate("${retryCount:-9} <= 2", state.lookup())).isFalse();
+    }
+
+    @Test
     @DisplayName("set / branch 不产生输出 ⇒ 不覆盖 ${last}：让下游节点读 ${last} 看个明白")
     void setAndBranchDoNotOverwriteLast() {
         WorkflowDefinition definition = WorkflowDefinition.builder("w")

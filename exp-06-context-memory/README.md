@@ -99,7 +99,20 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8（或�
 以下都是"文档说的"与"代码做的"不一致，本模块**只改测试断言、不动插件源码**，
 并把真实行为钉在测试里。复现环境：`com.benxin:benxin-spring-boot-starter:1.1.0`。
 
+> **状态更新（1.1.1）**：下面 4 条**全部已在插件 1.1.1 修复**。
+> 1.1.1 改动的文件正好是 `SlidingWindowCompactor` / `SummarizingCompactor` / `ContextCompactor` /
+> `DefaultContextManager` / `ChatMessage` / `TokenEstimator`。
+> 本模块的断言已从"钉住旧行为"改成"钉住新行为"——**它们现在同时是这 4 条修复的回归测试**。
+> 每一条下面都标注了「✅ 1.1.1 已修复」与新行为，原始记录保留作为对照。
+
 ### 1. `SlidingWindowCompactor` 一旦触发压缩，就只保留最后 1 条历史（高危）
+
+> ✅ **1.1.1 已修复**：压缩器重写为"`keepRecent` 是**下限**，预算内尽量多留"，
+> 并且 `keepRecent` 比历史还长时**一条都不丢、也不调用模型**。
+> 新断言：`CompactorTest.slidingWindowCompactorNeverCallsTheModel`（保留条数 ≥ keepRecent、且 < 历史总数）、
+> `CompactorTest.summarizingCompactorFallsBackToSlidingWindow`（`keepRecent=99` → 原样返回）、
+> `ContextManagerTest` 里对 `keepRecent` 下限的断言。
+> 下面是 1.1.0 的原始记录。
 
 - **证据**：`benxin-core/src/main/java/com/benxin/llm/core/context/SlidingWindowCompactor.java:56-63`
   的 `for` 循环把 `start` 同时当成"循环下界"和"结果下标"：
@@ -125,6 +138,11 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8（或�
 
 ### 2. `ChatMessage.withText(...)` 用在工具消息上不会"替换"，反而让 `text()` 变长（中危）
 
+> ✅ **1.1.1 已修复**：没有 `TextPart` 时改为替换 `ToolResultPart.content`，
+> 并保留 `toolUseId` / `name` / `error`（失败的工具结果压缩后仍然是"失败"）。
+> 新断言：`MessageApiTest.withTextKeepsOtherParts`。
+> 下面是 1.1.0 的原始记录。
+
 - **证据**：`benxin-core/src/main/java/com/benxin/llm/core/message/ChatMessage.java:143-150`
   把新 `TextPart` **插到最前**，再原样保留其余内容块（含 `ToolResultPart`）；
   而 `text()`（同文件 `101-111`）会把 `TextPart` 与 `ToolResultPart` 的内容**首尾拼接**。
@@ -136,6 +154,10 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8（或�
 
 ### 3. `TokenEstimator.DEFAULT` 对纯中日韩文本会多算 1 token（低危）
 
+> ✅ **1.1.1 已修复**：CJK 与非 CJK 分开统计，纯中文就是"1 字 1 token"，
+> 非 CJK 部分向上取整。新断言：`TokenEstimatorTest.defaultEstimatorValues`（`estimate("你好") == 2`）。
+> 下面是 1.1.0 的原始记录。
+
 - **证据**：`benxin-core/src/main/java/com/benxin/llm/core/util/TokenEstimator.java:33`
   `return cjk + Math.max(1, other / 4);` —— `other == 0`（全是 CJK）时仍会补 1。
 - **复现**：`TokenEstimatorTest.defaultEstimatorValues`。
@@ -143,6 +165,12 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8（或�
   压缩阈值判断因此对纯中文历史略微偏保守（每条消息多 1 token）。
 
 ### 4. `SlidingWindowCompactor` 的内部预算另有 1024 的下限（低危）
+
+> ✅ **1.1.1 已修复**：预算口径抽成共享的 `ContextCompactor.inputBudget(model, threshold, reserved)`，
+> 压缩器与 `DefaultContextManager` 从此同源，不再各算一套。
+> 新断言：`CompactorTest.compactionTriggerIsDrivenByTheModelWindow`、
+> `ContextManagerTest.thresholdControlsWhetherCompactionHappens`。
+> 下面是 1.1.0 的原始记录。
 
 - **证据**：`SlidingWindowCompactor.java:75-78` 的
   `Math.max(1024, max * threshold - reservedOutputTokens)`。

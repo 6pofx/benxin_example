@@ -109,8 +109,9 @@ public final class CustomBeans {
                               com.benxin.llm.core.context.ContextManager contextManager,
                               MemoryStore memoryStore,
                               SystemPromptProvider systemPromptProvider,
-                              ToolSandbox sandbox,
-                              ApprovalHandler approvalHandler,
+                              // 1.1.1 起这两个切面是 ObjectProvider（支持按 Agent 选沙箱/审批器）
+                              ObjectProvider<ToolSandbox> sandbox,
+                              ObjectProvider<ApprovalHandler> approvalHandler,
                               AgentRegistry agentRegistry,
                               ObjectProvider<LlmInterceptorChain> chain,
                               ObjectProvider<AgentListener> listeners) {
@@ -183,7 +184,10 @@ public final class CustomBeans {
                                               ObjectProvider<LlmInterceptorChain> chain,
                                               ObjectProvider<AgentListener> listeners) {
             return new MyAgentFactory(properties, modelRegistry, loopRegistry, toolCatalog, contextManager,
-                    memoryStore, systemPromptProvider, sandbox, approvalHandler, agentRegistry, chain, listeners);
+                    memoryStore, systemPromptProvider,
+                    com.benxin.exp.override.component.DemoLlmAgentFactory.fixed(sandbox),
+                    com.benxin.exp.override.component.DemoLlmAgentFactory.fixed(approvalHandler),
+                    agentRegistry, chain, listeners);
         }
     }
 

@@ -57,57 +57,71 @@ class DefaultLoopAnnotationTest {
             .withConfiguration(AutoConfigurations.of(LlmAutoConfiguration.class));
 
     @Test
-    @DisplayName("探针 Loop 会被注册进注册表，但默认 Loop 仍是字段初值 dsh-minimal")
-    void annotatedLoopIsRegisteredButNeverBecomesDefault() {
+    @DisplayName("@LlmLoop(defaultLoop = true) 现在真的会成为默认 Loop（1.1.1 修复）")
+    void annotatedLoopBecomesDefaultLoop() {
         runner.withUserConfiguration(SingleProbeConfiguration.class).run(context -> {
             LoopRegistry registry = context.getBean(LoopRegistry.class);
 
             assertThat(context).hasNotFailed();
-            // 注册这一步是好的：@LlmLoop.value() 就是它在注册表里的名字
+            // 注册这一步一直是好的：@LlmLoop.value() 就是它在注册表里的名字
             assertThat(registry.names()).contains("dsh-minimal", "exp-annotated-default");
 
-            // 实测：@LlmLoop(defaultLoop = true) **没有**成为默认。
-            // 原因不是注解没被读到（下面那条断言证明它读到了），而是
-            // LlmProperties.AgentProperties.defaultLoop 的字段初值就是 "dsh-minimal"，
-            // 于是"配置里写了 default-loop"这个条件永远为真，注解分支不可达。
+            // 1.1.0 时这里恒为 dsh-minimal：AgentProperties.defaultLoop 的**字段初值**就是
+            // "dsh-minimal" 且必然在内置表里，于是"配置里写了"这个分支恒真，
+            // @LlmLoop(defaultLoop = true) 成了死代码（本工程上报为 FINDINGS 第 20 条）。
+            // 1.1.1 起字段初值改为空，只有"用户显式配置"才压过注解。
             assertThat(registry.defaultName())
-                    .as("实测：注解的 defaultLoop = true 被字段初值 dsh-minimal 无条件覆盖")
-                    .isEqualTo(BuiltinLoops.DEFAULT_LOOP);
-            assertThat(registry.defaultLoop()).isInstanceOf(DshMinimalLoop.class);
+                    .as("1.1.1 修复：注解的 defaultLoop = true 生效")
+                    .isEqualTo("exp-annotated-default");
+            assertThat(registry.defaultLoop()).isInstanceOf(AnnotatedDefaultLoop.class);
         });
     }
 
     @Test
-    @DisplayName("两个 defaultLoop 探针同时存在：先注册者胜出，order() 不参与（实测行为）")
-    void firstRegisteredDefaultWinsNotLowestOrder() {
+    @DisplayName("多个 defaultLoop 候选：按 order 取最小者（1.1.1 修复，以前是注册顺序第一个）")
+    void lowestOrderWins() {
         runner.withUserConfiguration(TwoProbeConfiguration.class).run(context -> {
             LoopRegistry registry = context.getBean(LoopRegistry.class);
 
             assertThat(context).hasNotFailed();
             assertThat(registry.names()).contains("exp-annotated-default", "exp-annotated-default-low");
 
-            // 两个探针都写了 defaultLoop = true，注解上的 order 分别是 10 与 0，
-            // 但默认 Loop 两者都不是 —— 见上一个用例。
-            // 这里把"两个探针都在、顺序不影响结果"这件事钉住：无论谁先注册，
-            // 默认都由字段初值决定，order() 读都没被读。
-            assertThat(registry.defaultName()).isEqualTo(BuiltinLoops.DEFAULT_LOOP);
+            // 两个探针都写了 defaultLoop = true，order 分别是 10 与 0。
+            // 1.1.0 时两者都不是默认（被字段初值挡住，FINDINGS 第 20 条），
+            // 而且即便轮到注解，取的也是"注册顺序里第一个"、order 从未被比较（第 21 条）。
+            // 1.1.1 起按 @LlmLoop 的 javadoc 承诺：order 最小者胜出。
+            assertThat(registry.defaultName()).isEqualTo("exp-annotated-default-low");
+            assertThat(registry.defaultLoop()).isInstanceOf(LowOrderDefaultLoop.class);
         });
     }
 
     @Test
-    @DisplayName("@LlmLoop(order) 读都没被读：注解上的值可以取到，但选举路径上没有任何消费者")
-    void orderIsNeverConsumed() {
+    @DisplayName("注解值仍然可读，且 order 真的参与了选举（1.1.1 修复）")
+    void orderIsConsumed() {
         runner.withUserConfiguration(TwoProbeConfiguration.class).run(context -> {
-            // 注解值与它在注册表里的名字都能读到 —— 说明"读注解"这件事本身是通的
+            // "读注解"这件事本来就是通的
             assertThat(AnnotatedDefaultLoop.class.getAnnotation(LlmLoop.class).order()).isEqualTo(10);
             assertThat(LowOrderDefaultLoop.class.getAnnotation(LlmLoop.class).order()).isEqualTo(0);
 
-            // 但 order 更小的那个并没有因此胜出：无论怎么组合，默认都是字段初值。
-            // 若 order() 参与选举，order = 0 的 exp-annotated-default-low 必然胜出。
+            // 1.1.0 时这条断言是 isNotEqualTo(...low).isEqualTo(DEFAULT_LOOP)；
+            // 1.1.1 起 order 更小的那个确实胜出 —— order() 从"没人读"变成"决定选举结果"。
             assertThat(context.getBean(LoopRegistry.class).defaultName())
-                    .isNotEqualTo("exp-annotated-default-low")
-                    .isEqualTo(BuiltinLoops.DEFAULT_LOOP);
+                    .isEqualTo("exp-annotated-default-low");
         });
+    }
+
+    @Test
+    @DisplayName("配置里写了未注册的 Loop 名：告警并回退到注解默认，而不是字面量 dsh-minimal")
+    void unknownConfiguredLoopFallsBackToAnnotatedDefault() {
+        runner.withUserConfiguration(SingleProbeConfiguration.class)
+                .withPropertyValues("llm.agent.default-loop=does-not-exist")
+                .run(context -> {
+                    LoopRegistry registry = context.getBean(LoopRegistry.class);
+
+                    assertThat(context).hasNotFailed();
+                    // 1.1.1 起回退链是：配置(未注册) → 注解默认 → dsh-minimal
+                    assertThat(registry.defaultName()).isEqualTo("exp-annotated-default");
+                });
     }
 
     @Test

@@ -1,4 +1,4 @@
-# 实测发现的插件问题（benxin 1.1.0）
+# 实测发现的插件问题（benxin 1.1.0 → 1.1.1）
 
 本文件汇总 `benxin_exp` 各子项目在**真实运行**中发现的插件问题。
 
@@ -7,51 +7,191 @@
 > 并在代码注释里标注这是绕开而不是正确用法。
 
 复现环境：Windows 11 / JDK 24（`--release 17`）/ Spring Boot 3.5.5 /
-`com.benxin:benxin-spring-boot-starter:1.1.0`（本地仓库二进制，与 `benxin/` 源码一一对应）。
+`com.benxin:benxin-spring-boot-starter`（本地仓库二进制，与 `benxin/` 源码一一对应）。
+
+## 版本演进与当前状态
+
+| 版本 | 情况 |
+|---|---|
+| **1.1.0** | 本工程实测出下面 **31 条**问题，全部只记录、不修插件 |
+| **1.1.1** | 插件侧把其中 **30 条全部修复**（第 23 条不是缺陷，只是"测试夹具别放主包下"的提醒）—— 逐条证据见 [§一.5](#一5-已在-111-修复的问题30-条)。本工程把对应的断言从"钉住旧行为"改成"钉住新行为"，于是它们同时成了**回归测试** |
+| **1.1.1 引入的新回归** | 修 30 条的过程中带出 **2 条新问题**（32 未知 Agent 的 SSE 由 404 变 500、33 私有重载绕过了公开重载的覆写）—— 见 [§一.6](#一6-111-新引入的回归2-条) |
+
+> **下面「一、结论速览」那张表记录的是 1.1.0 当时的状态**（保留原样作为历史），
+> 因此表里的 ⏳ 只表示"1.1.0 时存在"。
+> **升级到 1.1.1 后，14 个模块里需要改断言的只有 exp-02 / exp-04 / exp-05 / exp-06 / exp-07 / exp-08 / exp-09 / exp-12**，
+> 其余（含 exp-01、exp-03、exp-10、exp-11）一行未动、直接通过 ——
+> 换句话说：这 **793 个用例可以当成插件升级时的兼容性回归套件**用。
+> 插件作者改完一条，跑一遍就知道有没有连带影响（本轮就抓出了上面那 2 条新回归）。
 
 ---
 
 ## 一、结论速览
 
-| # | 问题 | 严重度 | 类型 | 证据 |
-|---|---|---|---|---|
-| 1 | `@LlmRetry` 注解**没有任何消费点**，打了等于没打 | 中 | 文档承诺了但未实现 | 全仓库 grep（仅定义处命中） |
-| 2 | `@LlmAgent(stream = true)` 与 `llm.agent.stream` 是**死配置** | 中 | 写入后无人读取 | `LlmAgentFactory:120` 写 / 全仓库 0 处读 |
-| 3 | `@LlmTool` 方法的 `AgentSession` 参数**恒为 `null`**（却被当作"可注入参数"排除出 schema） | 中 | 半成品注入点 | `JsonSchemaGenerator:74` vs `MethodToolCallback:102` |
-| 4 | **工具调用五道关卡的实际顺序与架构文档相反**（沙箱最先、拦截器最后） | 中 | 文档与实现不符 | `ARCHITECTURE.md:194-206` vs `DefaultLoopContext:425+` |
-| 5 | `@LlmTool` **无法声明** `requiresApproval` / `parallelSafe` | 中 | 注解表达力缺口 | `MethodToolCallback:87` 恒 `false`，未覆写 `parallelSafe()` |
-| 6 | `@LlmToolParam(required = true)` **运行期不强制**：缺参静默回落 | 中 | 校验缺口 | `JsonSchemaGenerator:61` / `MethodToolCallback.bind` |
-| 7 | `defaultValue` 生成的 schema `default` **恒为字符串** | 低 | 类型不一致 | `JsonSchemaGenerator:57` |
-| 8 | schema 深度截断**先于**类型判断，标量被降级成 `object` | 低 | 边界降级过宽 | `JsonSchemaGenerator.forType` 开头 |
-| 9 | `AgentRegistry.resolved()` 只含"已解析过"的 Agent，与"已注册"直觉不符 | 低 | API 语义易误解 | `AgentRegistry.resolved()` 实现 |
-| 10 | HTTP SSE 端点**未声明 charset**，Spring 客户端读中文必然乱码 | 中 | 内容协商缺陷 | `LlmAgentController.java:134` |
-| 11 | 同一个异常 `onError` 被**广播两次**（Loop 与 Agent 各一次） | 中 | 重复事件 | `AbstractAgentLoop.java:46` + `DefaultAgent.java:278` |
-| 12 | `SelectiveInterceptor` 没有 `delegate()` 访问器，被包装者不可达 | 低 | 可观测性缺口 | `SelectiveInterceptor.java:23-24` |
-| 13 | 条件表达式里的 `${x:-兜底}` **静默失效**（整串被当成变量名） | **高** | 语义不一致且无提示 | `Conditions.java:311` + `Templates.resolve:74` |
-| 14 | **END 节点的出边**没有任何防线（加载期不报错、运行期静默丢弃） | 中 | 静默死代码 | `WorkflowEngine` END 分支 + `WorkflowDefinition.validate()` |
-| 15 | `WorkflowIo` 自动格式识别的报错信息误导（flow 风格 YAML 被当 JSON） | 低 | 报错方向错误 | `WorkflowIo.java:93-96` |
-| 16 | **`SlidingWindowCompactor` 一旦触发就只保留最后 1 条**（`keepRecent` 失效、可能丢系统摘要） | **高** | 循环写错导致数据丢失 | `SlidingWindowCompactor.java:56-63` |
-| 17 | `ChatMessage.withText` 对**工具消息**不是替换而是"前置+保留原内容" | 中 | 语义与 javadoc 不符 | `ChatMessage.java:143-150` |
-| 18 | `TokenEstimator.DEFAULT` 对纯中文多算 1（`cjk + max(1, other/4)`） | 低 | 估算偏差 | `TokenEstimator.java:33` |
-| 19 | `SlidingWindowCompactor` 内部预算带 `max(1024, …)` 下限，与 `ContextManager` 口径不同 | 低 | 两套预算口径 | `SlidingWindowCompactor.java:75-78` |
-| 20 | `@LlmLoop(defaultLoop = true)` **永远不会生效**（被默认配置恒真的第一分支挡住） | 中 | 注解属性形同虚设 | `LlmAutoConfiguration:203-210` + `LlmProperties:295` |
-| 21 | `@LlmLoop(order = ...)` 未被使用（"第一个"而非"order 最小"胜出） | 低 | 注解属性形同虚设 | `LlmAutoConfiguration:192-200` |
-| 22 | 注册器重复执行时用 `name#1` 静默产生第二个同类型 bean | 低 | 错误信息隐晦 | `LlmAgentRegistrar` 去重逻辑 |
-| 23 | `LlmComponentRegistrar` 会连 `target/test-classes` 一起扫（测试夹具会进生产上下文） | 低 | 扫描范围未区分来源 | exp-09 的实测复现 |
-| 24 | `AgentAttributes` 的 6 个常量里 5 个没有被插件自己使用（`SESSION_ID`/`AGENT_NAME` 在 `attributes()` 里查不到） | 低 | 公开常量与真实来源不一致 | `AgentAttributes.java` 全文 |
-| 25 | 流式路径收到"200 + 非 SSE 整包响应"时**静默返回空回答** | 中 | 缺失 Content-Type 判定 | `JdkHttpTransport.java:50-70` + `HttpLlmModel.stream` |
-| 26 | `beforeTool` 短路会 **`break` 掉整条拦截器链**（排在后面的拦截器看不到这次调用） | 中 | 顺序即功能，且无提示 | `DefaultLoopContext:441-451` |
-| 27 | 手写 `ToolCallback` 用 `@LlmAgent(tools = 外层类.class)` **匹配不到**（按实际实例类精确匹配 + 只 WARN 跳过） | 中 | 静默失效 | `LlmToolCatalog.forClasses` |
-| 28 | `ToolSandbox` / `ApprovalHandler` 按**裸类型**注入，多实现时直接启动失败 | 中 | 缺 `@Qualifier` 支持 | `LlmAgentFactory` 构造参数 |
+状态：✅ = 1.1.1 已修复；⏳ = 1.1.1 仍存在。
+
+| # | 状态 | 问题 | 严重度 | 类型 | 证据 |
+|---|---|---|---|---|---|
+| 1 | ⏳ | `@LlmRetry` 注解**没有任何消费点**，打了等于没打 | 中 | 文档承诺了但未实现 | 全仓库 grep（仅定义处命中） |
+| 2 | ⏳ | `@LlmAgent(stream = true)` 与 `llm.agent.stream` 是**死配置** | 中 | 写入后无人读取 | `LlmAgentFactory:120` 写 / 全仓库 0 处读 |
+| 3 | ⏳ | `@LlmTool` 方法的 `AgentSession` 参数**恒为 `null`**（却被当作"可注入参数"排除出 schema） | 中 | 半成品注入点 | `JsonSchemaGenerator:74` vs `MethodToolCallback:102` |
+| 4 | ⏳ | **工具调用五道关卡的实际顺序与架构文档相反**（沙箱最先、拦截器最后） | 中 | 文档与实现不符 | `ARCHITECTURE.md:194-206` vs `DefaultLoopContext:425+` |
+| 5 | ⏳ | `@LlmTool` **无法声明** `requiresApproval` / `parallelSafe` | 中 | 注解表达力缺口 | `MethodToolCallback:87` 恒 `false`，未覆写 `parallelSafe()` |
+| 6 | ⏳ | `@LlmToolParam(required = true)` **运行期不强制**：缺参静默回落 | 中 | 校验缺口 | `JsonSchemaGenerator:61` / `MethodToolCallback.bind` |
+| 7 | ⏳ | `defaultValue` 生成的 schema `default` **恒为字符串** | 低 | 类型不一致 | `JsonSchemaGenerator:57` |
+| 8 | ⏳ | schema 深度截断**先于**类型判断，标量被降级成 `object` | 低 | 边界降级过宽 | `JsonSchemaGenerator.forType` 开头 |
+| 9 | ⏳ | `AgentRegistry.resolved()` 只含"已解析过"的 Agent，与"已注册"直觉不符 | 低 | API 语义易误解 | `AgentRegistry.resolved()` 实现 |
+| 10 | ⏳ | HTTP SSE 端点**未声明 charset**，Spring 客户端读中文必然乱码 | 中 | 内容协商缺陷 | `LlmAgentController.java:134` |
+| 11 | ⏳ | 同一个异常 `onError` 被**广播两次**（Loop 与 Agent 各一次） | 中 | 重复事件 | `AbstractAgentLoop.java:46` + `DefaultAgent.java:278` |
+| 12 | ⏳ | `SelectiveInterceptor` 没有 `delegate()` 访问器，被包装者不可达 | 低 | 可观测性缺口 | `SelectiveInterceptor.java:23-24` |
+| 13 | **✅** | 条件表达式里的 `${x:-兜底}` **静默失效**（整串被当成变量名） | **高** | 语义不一致且无提示 | 1.1.0：`Conditions` 的 `RefValue` 不拆 `:-` |
+| 14 | ⏳ | **END 节点的出边**没有任何防线（加载期不报错、运行期静默丢弃） | 中 | 静默死代码 | `WorkflowEngine` END 分支 + `WorkflowDefinition.validate()` |
+| 15 | ⏳ | `WorkflowIo` 自动格式识别的报错信息误导（flow 风格 YAML 被当 JSON） | 低 | 报错方向错误 | `WorkflowIo.java:93-96` |
+| 16 | **✅** | **`SlidingWindowCompactor` 一旦触发就只保留最后 1 条**（`keepRecent` 失效、可能丢系统摘要） | **高** | 循环写错导致数据丢失 | 1.1.0：`SlidingWindowCompactor` 的循环下界被改写 |
+| 17 | **✅** | `ChatMessage.withText` 对**工具消息**不是替换而是"前置+保留原内容" | 中 | 语义与 javadoc 不符 | 1.1.0：`ChatMessage.withText` 只删 `TextPart` |
+| 18 | **✅** | `TokenEstimator.DEFAULT` 对纯中文多算 1（`cjk + max(1, other/4)`） | 低 | 估算偏差 | 1.1.0：`return cjk + Math.max(1, other / 4)` |
+| 19 | **✅** | `SlidingWindowCompactor` 内部预算带 `max(1024, …)` 下限，与 `ContextManager` 口径不同 | 低 | 两套预算口径 | 1.1.0：`budgetOf` 的 `Math.max(1024, …)` |
+| 20 | ⏳ | `@LlmLoop(defaultLoop = true)` **永远不会生效**（被默认配置恒真的第一分支挡住） | 中 | 注解属性形同虚设 | `LlmAutoConfiguration:203-210` + `LlmProperties:295` |
+| 21 | ⏳ | `@LlmLoop(order = ...)` 未被使用（"第一个"而非"order 最小"胜出） | 低 | 注解属性形同虚设 | `LlmAutoConfiguration:192-200` |
+| 22 | ⏳ | 注册器重复执行时用 `name#1` 静默产生第二个同类型 bean | 低 | 错误信息隐晦 | `LlmAgentRegistrar` 去重逻辑 |
+| 23 | ⏳ | `LlmComponentRegistrar` 会连 `target/test-classes` 一起扫（测试夹具会进生产上下文） | 低 | 扫描范围未区分来源 | exp-09 的实测复现 |
+| 24 | ⏳ | `AgentAttributes` 的 6 个常量里 5 个没有被插件自己使用（`SESSION_ID`/`AGENT_NAME` 在 `attributes()` 里查不到） | 低 | 公开常量与真实来源不一致 | `AgentAttributes.java` 全文 |
+| 25 | ⏳ | 流式路径收到"200 + 非 SSE 整包响应"时**静默返回空回答** | 中 | 缺失 Content-Type 判定 | `JdkHttpTransport.java:50-70` + `HttpLlmModel.stream` |
+| 26 | ⏳ | `beforeTool` 短路会 **`break` 掉整条拦截器链**（排在后面的拦截器看不到这次调用） | 中 | 顺序即功能，且无提示 | `DefaultLoopContext:441-451` |
+| 27 | ⏳ | 手写 `ToolCallback` 用 `@LlmAgent(tools = 外层类.class)` **匹配不到**（按实际实例类精确匹配 + 只 WARN 跳过） | 中 | 静默失效 | `LlmToolCatalog.forClasses` |
+| 28 | ⏳ | `ToolSandbox` / `ApprovalHandler` 按**裸类型**注入，多实现时直接启动失败 | 中 | 缺 `@Qualifier` 支持 | `LlmAgentFactory` 构造参数 |
 | 29 | 审批被拒时的理由是**硬编码**的，`ApprovalHandler` 没有回传理由的出口 | 低 | 可读性缺口 | `DefaultLoopContext` 审批分支 |
-| 30 | `agent.toBuilder().model("名字")` / `.loop("名字")` **静默无效** —— 实例优先，名字被忽略 | **中高** | 静默用错模型/循环 | `DefaultAgent:68-81` |
-| 31 | `agent.toBuilder()` **不携带监听器** —— 派生副本的运行不进任何统计/审计 | 中 | 可观测性静默丢失 | `DefaultAgent.toBuilder()` |
+| 30 | **✅** | `agent.toBuilder().model("名字")` / `.loop("名字")` **静默无效** —— 实例优先，名字被忽略 | **中高** | 静默用错模型/循环 | 1.1.0：`DefaultAgent` 构造里"实例优先" + `AgentBuilder` 两个重载互不清空 |
+| 31 | **✅** | `agent.toBuilder()` **不携带监听器** —— 派生副本的运行不进任何统计/审计 | 中 | 可观测性静默丢失 | 1.1.0：`DefaultAgent.toBuilder()` 缺 `.listener(...)` |
+
+---
+
+## 一.5、已在 1.1.1 修复的问题（30 条）
+
+插件 1.1.1 改动的文件与对应条目：
+
+```
+benxin-core/.../workflow/Conditions.java              ← 13  条件里的 ${x:-兜底}
+benxin-core/.../workflow/WorkflowIo.java              ← 15  flow YAML 的报错
+benxin-core/.../workflow/WorkflowDefinition.java      ← 14  END 出边 WARN
+benxin-core/.../context/SlidingWindowCompactor.java   ← 16、19  压缩丢数据 / 预算口径
+benxin-core/.../context/SummarizingCompactor.java     ← 16（摘要被丢的连带项）
+benxin-core/.../context/ContextCompactor.java         ← 19  统一 inputBudget
+benxin-core/.../context/DefaultContextManager.java    ← 19
+benxin-core/.../message/ChatMessage.java              ← 17  withText 对工具消息
+benxin-core/.../util/TokenEstimator.java              ← 18  纯中文多算 1
+benxin-core/.../agent/DefaultAgent.java               ← 24、30、31  运行属性 / 名字重载 / 监听器继承
+benxin-core/.../agent/AgentBuilder.java               ← 30  model/loop 两个重载"后来者胜"
+benxin-core/.../tool/JsonSchemaGenerator.java         ← 3、5、6、7、8  schema 与注入
+benxin-core/.../tool/MethodToolCallback.java          ← 3、5、6     注入 / 审批 / 必填校验
+benxin-core/.../tool/RetryingToolCallback.java        ← 1（新文件）
+benxin-core/.../annotation/LlmTool.java               ← 5  requiresApproval / parallelSafe
+benxin-core/.../loop/AbstractAgentLoop.java           ← 11  onError 只广播一次
+benxin-core/.../loop/DefaultLoopContext.java          ← 4、26、29  关卡顺序 / 短路不 break / 审批理由
+benxin-core/.../transport/JdkHttpTransport.java       ← 25  非 SSE 整包响应
+benxin-core/.../sandbox/ApprovalHandler.java          ← 29  拒绝理由
+benxin-spring-boot-starter/.../LlmAgentFactory.java   ← 1、28  @LlmRetry 消费 / ObjectProvider
+benxin-spring-boot-starter/.../LlmAutoConfiguration.java ← 20、21  defaultLoop / order
+benxin-spring-boot-starter/.../LlmAgentController.java ← 2、10   stream 开关 / SSE charset
+benxin-spring-boot-starter/.../LlmToolCatalog.java    ← 27  外层类匹配
+benxin-spring-boot-starter/.../SelectiveInterceptor.java ← 12  delegate()
+benxin-spring-boot-starter/.../AgentRegistry.java     ← 9   resolved() javadoc + resolveAll()
+benxin-spring-boot-starter/.../LlmAgentRegistrar.java ← 22  重复注册检测
+benxin/docs/ARCHITECTURE.md                           ← 4   关卡顺序改成与实现一致
+```
+
+| # | 1.1.0 的行为 | 1.1.1 的行为 | 本工程的回归断言 |
+|---|---|---|---|
+| 1 | `@LlmRetry` 无任何消费点 | `resolveRetryPolicy` + `RetryingLlmModel` / `RetryingToolCallback` | exp-09 `DeadConfigurationTest.llmRetryAnnotationIsConsumed` |
+| 2 | `@LlmAgent(stream)` / `llm.agent.stream` 是死配置 | `LlmAgentController.chat` 按 `spec.stream()` 选通道（SSE / JSON） | exp-09 `DeadConfigurationTest.streamFlagIsWrittenAndConsumed` |
+| 3 | `AgentSession` 参数恒为 `null` | 注入可用的会话视图（`id()` 即 sessionId） | exp-02 `ToolExecutionTest.agentSessionParameterIsInjected` |
+| 4 | 关卡顺序与架构文档相反 | 文档改成与实现一致（沙箱 → 审批 → 拦截器） | exp-02 `ToolExecutionTest.sandboxRunsBeforeInterceptors` |
+| 5 | `@LlmTool` 无法声明审批/并行 | 注解新增 `requiresApproval` / `parallelSafe` | exp-02 的注解工具对照演示 |
+| 6 | `required = true` 运行期不强制 | 缺参返回 `缺少必填参数 [x]，请补齐后重试` | exp-02 `ToolDeclarationTest.requiredOnlyAffectsSchema` |
+| 7 | `defaultValue` 的 schema `default` 恒为字符串 | 按 type 转换（int → 数字） | exp-02 `ToolDeclarationTest.defaultValueAppliesOnlyWhenMissing` |
+| 8 | 深度截断先于类型判断，标量降级成 object | 标量不受深度限制 | exp-02 `ToolDeclarationTest.nestedPojoIsExpandedRecursivelyAndDepthIsCapped` |
+| 9 | `resolved()` 语义易误解 | 补 javadoc + `resolveAll()` | exp-01 / exp-09 的遍历用法 |
+| 10 | SSE 未声明 charset | 声明 `text/event-stream;charset=UTF-8` | exp-08 `LlmWebEndpointTest.contractSseCharsetIsDeclared`（**但见新回归 32**） |
+| 11 | `onError` 广播两次 | 只广播一次 | exp-08 `MonitorListenerTest.errorCallbackIsBroadcastOnce` |
+| 12 | `SelectiveInterceptor` 无 `delegate()` | 已提供 | exp-08 的拦截器诊断断言 |
+| 13 | 条件里的 `${x:-兜底}` 静默失效 | 按字面量解析兜底值 | exp-05 `ConditionsTest.fallbackInsideConditionsWorks`、`WorkflowEngineTest.fallbackInsideBranchConditionsWorks` |
+| 14 | END 出边静默丢弃 | 加载期 WARN | exp-05 `WorkflowEngineTest`（END 出边用例） |
+| 15 | flow YAML 报"非法 JSON" | 点明"其实是 YAML"并给两条出路 | exp-05 `WorkflowIoDetectionTest` |
+| 16 | 压缩触发后只剩最后 1 条 | `keepRecent` 是下限，预算内尽量多留 | exp-06 `CompactorTest` / `ContextManagerTest` |
+| 17 | `withText` 对工具消息越压越长 | 替换 `ToolResultPart.content` 并保留 error | exp-06 `MessageApiTest.withTextKeepsOtherParts` |
+| 18 | 纯中文多算 1 token | 1 字 1 token | exp-06 `TokenEstimatorTest.defaultEstimatorValues` |
+| 19 | 压缩预算两套口径 | 共享 `ContextCompactor.inputBudget(...)` | exp-06 `CompactorTest` / `ContextManagerTest` |
+| 20 | `@LlmLoop(defaultLoop = true)` 永不生效 | 字段初值改空，注解分支复活 | exp-04 / exp-09 的 `annotatedDefaultBecomesDefaultLoop` |
+| 21 | `@LlmLoop(order)` 从未被读 | 按 order 取最小者 | exp-04 `DefaultLoopAnnotationTest.lowestOrderWins` / `orderIsConsumed` |
+| 22 | 重复注册静默产生 `name#1` | 检测到重复 bean 定义并给出可读报错 | exp-09 `EnableLlmAgentsScanTest` |
+| 24 | `SESSION_ID` / `AGENT_NAME` 无写入点 | 运行伊始播种 | exp-04 `LoopsTest.sessionAndAgentNameKeysAreWritten` |
+| 25 | 非 SSE 整包响应 → 静默空回答 | 抛可读 `ModelException`（带响应体） | exp-07 `ProtocolWireTest.nonSseBodyOnStreamingPathFailsReadably` |
+| 26 | `beforeTool` 短路 `break` 整条链 | 短路后仍继续通知其余拦截器 | exp-08 `ObservingInterceptorTest` |
+| 27 | 手写 `ToolCallback` 匹配不到外层类 | 沿 `getEnclosingClass()` 向上找 | exp-10 的写工具装配 |
+| 28 | 沙箱/审批裸类型注入，多实现即启动失败 | 改为 `ObjectProvider<...>`（可 per-Agent 选择） | exp-09 `SpringOverrideTest`（**但见新回归 33**） |
+| 29 | 审批拒绝理由硬编码 | `approval.reason()` 一并回灌模型 | exp-03 / exp-10 的审批用例 |
+| 30 | `toBuilder().model/loop("名字")` 静默无效 | 两个重载"后来者胜" | exp-06 `AgentWiringTest.derivedAgentHonoursModelName`、exp-12 `OfflinePathTest.nameOverloadsWorkOnDerivedBuilder` |
+| 31 | `toBuilder()` 丢监听器 | `toBuilder()` 带上 `.listener(...)` | exp-12 `OfflinePathTest.derivedAgentKeepsListeners` |
+
+> 第 23 条（`LlmComponentRegistrar` 会扫 `target/test-classes`）**不是缺陷** ——
+> 真实项目里 `src/main` 本来就该被扫；它只是提醒"测试夹具别放在主应用包下"。
+
+---
+
+## 一.6、1.1.1 新引入的回归（2 条）
+
+这两条是**修上面那 30 条时带出来的**，由本工程的回归套件在升级验证中抓到。
+
+### 回归 32：未知 Agent 的 SSE 端点由 404 变成 500
+
+**现象.** `GET /llm/agents/{不存在的名字}/stream` 现在返回 **500**；1.1.0 与文档承诺的都是 **404**
+（同一个 `@ExceptionHandler(NoSuchAgentException.class)`，`/chat` 上仍然是 404，所以只有 `/stream` 受影响）。
+
+**根因.** 修"SSE 未声明 charset"（第 10 条）时，把 `response.setContentType(SSE_CONTENT_TYPE)`
+提到了 `agentRegistry.get(name)` **之前**（`LlmAgentController.stream`）。
+于是异常处理器要把 `Map` 写成 JSON 时，响应上已经预设了 SSE 的 Content-Type：
+
+```
+HttpMessageNotWritableException: No converter for [class java.util.LinkedHashMap]
+  with preset Content-Type 'text/event-stream;charset=UTF-8'
+```
+
+**复现/断言.** exp-08 `LlmWebEndpointTest.contractUnknownAgentOnStreamReturns404`
+（先断言 `/chat` 是 404 作为对照，再断言 `/stream` 实测为 500）。
+
+**建议.** 把 `response.setContentType(...)` 挪到 `agentRegistry.get(name)` 之后（确认要流式了再设），
+或在异常处理器里先 `response.reset()` / 改回 `application/json`。
+
+### 回归 33：私有的 4 参 `create` 重载绕过了子类覆写的公开 3 参 `create`
+
+**现象.** 子类覆写 `LlmAgentFactory.create(AgentSpec, ToolRegistry, List<AgentInterceptor>)`
+再也收不到声明式装配的调用 —— 它现在是个"没人调用的公开方法"。
+
+**根因.** 为支持 `@LlmRetry`（第 1 条），`createFromInterface` 改成调用新增的**私有**
+`create(spec, tools, interceptors, retry)`；公开的三个 `create` 重载都委托给它，
+但 `createFromInterface` 不再经过它们。于是覆写公开重载的子类**被静默绕过**（不报错）。
+
+**复现/断言.** exp-09 `DemoLlmAgentFactory` 原来覆写 3 参 `create` 来记录"装配了哪些 Agent"，
+升级后 `builtAgents()` 一直是空 → `SpringOverrideTest.llmAgentFactoryFacetIsOverridden` 变红。
+示例已改为覆写同样是 public 的 `createFromInterface`（位置更靠前，不受内部重载拆分影响）。
+
+**建议.** 让私有的 4 参重载改为调用公开的 3 参重载（把 retry 作为另一个入口传入），
+或在 javadoc 里明确"装配扩展点是 `createFromInterface`"。
 
 ---
 
 ## 二、逐条详情
 
+> **本节保留的是 1.1.0 当时的原始记录**（含复现步骤与影响分析），作为历史对照 ——
+> "曾经错成什么样"对后来者仍有价值。
+> **除第 23 条（非缺陷）外，其余 30 条均已在 1.1.1 修复**，逐条对应关系与回归断言见 [§一.5](#一5-已在-111-修复的问题30-条)；
+> 修复过程中新引入的 2 条回归见 [§一.6](#一6-111-新引入的回归2-条)。
+
 ### 问题 1：`@LlmRetry` 注解完全无效
+
+> ✅ **1.1.1 已修复**：`LlmAgentFactory#resolveRetryPolicy` 读取它（接口 + 方法级取 `maxAttempts` 最大者、
+> `includeTools` 取或），模型包 `RetryingLlmModel`、工具包 `RetryingToolCallback`。
+> 回归断言：exp-09 `DeadConfigurationTest.llmRetryAnnotationIsConsumed`。
 
 **现象.** README 的「注解速查」表写着 `@LlmRetry`「声明重试策略」，
 但给工具方法或 Agent 接口打上它（`maxAttempts` / `backoffMillis` / `multiplier` / `includeTools` 任意组合），
@@ -335,6 +475,11 @@ exp-08 的测试 `MonitorListenerTest.errorCallbackIsBroadcastTwice` 实测 `cou
 
 ### 问题 13：条件表达式里的 `${x:-兜底}` 静默失效（本工程实测最贵的一条）
 
+> ✅ **1.1.1 已修复**：`Conditions` 的 `RefValue` 现在按与 `Templates.render` 一致的语义拆分 `:-`，
+> 兜底值按字面量解析。回归断言见 exp-05 的
+> `ConditionsTest.fallbackInsideConditionsWorks` 与 `WorkflowEngineTest.fallbackInsideBranchConditionsWorks`。
+> 下面保留的是 1.1.0 当时的原始记录。
+
 **现象.** 模板语法承诺 `${名称:-兜底值}`，但在**边的条件表达式**里这个兜底**不生效**：
 `${x:-0}` 不会被拆成"变量 `x`，取不到用 `0`"，而是被当成一个名叫 `x:-0` 的变量去查表，
 查到 `null`，于是比较恒为假。**不抛异常、不打警告、那条边永远不成立。**
@@ -428,6 +573,12 @@ exp-05 的测试 `WorkflowIoDetectionTest.flowStyleYamlIsMistakenForJson` 钉住
 
 ### 问题 16：`SlidingWindowCompactor` 一旦触发就只保留最后 1 条（**高危**）
 
+> ✅ **1.1.1 已修复**：压缩器重写为"`keepRecent` 是下限，预算内尽量多留"，
+> 且与 `ContextManager` 共用 `ContextCompactor.inputBudget(...)`。
+> 回归断言见 exp-06 的 `ContextManagerTest` / `CompactorTest`
+> （含"历史比 keepRecent 还短时一条都不丢、也不调模型"）。
+> 下面保留的是 1.1.0 当时的原始记录。
+
 **现象.** 用 `SlidingWindowCompactor`（文档推荐它是因为"不调用模型、成本可预测"）压缩上下文时，
 **压缩后只剩下最后一条对话消息** —— 不管 `keepRecent` 传的是 8 还是 2，结果完全一样。
 更糟的是：`SummarizingCompactor` 的兜底路径也会走它，于是"摘要失败时退化成滑窗"会**把摘要本身也丢掉**。
@@ -468,6 +619,10 @@ for (int candidate = conversation.size() - 1; candidate >= start; candidate--) {
 
 ### 问题 17：`ChatMessage.withText` 对工具消息不是替换，而是"前置 + 保留原内容"
 
+> ✅ **1.1.1 已修复**：没有 `TextPart` 时改为替换 `ToolResultPart.content`，
+> 并保留 `toolUseId` / `name` / `error`。回归断言见 exp-06 的 `MessageApiTest.withTextKeepsOtherParts`。
+> 下面保留的是 1.1.0 当时的原始记录。
+
 **现象.** 文档/方法名读起来是"替换文本内容"，但对 **TOOL 消息**（带 `ToolResultPart`）它变成
 "把新文本插到最前面，并保留原来的工具结果"，于是 `text()` 变长而不是被替换。
 
@@ -499,6 +654,10 @@ toolResult(id, name, "很长的结果", false).withText("压缩后的占位").te
 
 ### 问题 18：`TokenEstimator.DEFAULT` 对纯中文多算 1
 
+> ✅ **1.1.1 已修复**：改为分别统计 CJK 与非 CJK，纯中文就是"1 字 1 token"，
+> 非 CJK 部分向上取整。回归断言见 exp-06 的 `TokenEstimatorTest.defaultEstimatorValues`（`"你好" → 2`）。
+> 下面保留的是 1.1.0 当时的原始记录。
+
 **现象.** `TokenEstimator.DEFAULT.estimate("你好")` 返回 **3**，而 javadoc 的口径是"中日韩 1 字 1 token"（应为 2）。
 
 **证据.** `TokenEstimator.java:33`：`return cjk + Math.max(1, other / 4);`
@@ -508,6 +667,10 @@ toolResult(id, name, "很长的结果", false).withText("压缩后的占位").te
 ---
 
 ### 问题 19：`SlidingWindowCompactor` 的内部预算与 `ContextManager` 不同口径
+
+> ✅ **1.1.1 已修复**：抽成共享的 `ContextCompactor.inputBudget(model, threshold, reserved)`，
+> 压缩器与 `DefaultContextManager` 从此同一套预算。
+> 下面保留的是 1.1.0 当时的原始记录。
 
 **现象.** `SlidingWindowCompactor.budgetOf(...)` 是 `max(1024, max*token - reservedOutput)`，
 而 `DefaultContextManager` 判断"要不要压缩"用的是 `model窗口 - reservedOutputTokens`（无 1024 下限）。
@@ -742,6 +905,12 @@ result = ToolResult.error("用户拒绝执行工具 [" + call.toolName() + "]");
 
 ### 问题 30：`toBuilder().model("名字")` / `.loop("名字")` 静默无效（**用错模型也不会报错**）
 
+> ✅ **1.1.1 已修复**：`AgentBuilder` 的两个重载现在"后来者胜" ——
+> `model(String)` 会把实例置空、`model(LlmModel)` 会把名字置空（`loop` 同理）。
+> 回归断言：`exp-06` `AgentWiringTest.derivedAgentHonoursModelName`、
+> `exp-12` `OfflinePathTest.nameOverloadsWorkOnDerivedBuilder`。
+> 下面保留的是 1.1.0 当时的原始记录。
+
 **现象.** README 把 `Agent.toBuilder()` 列为常用 API，`AgentBuilder` 也同时提供
 `model(LlmModel)` 与 `model(String)` 两个重载。但在**派生副本**上，字符串重载会被完全忽略：
 
@@ -789,6 +958,11 @@ Agent local = agentRegistry.get("localAssistant").toBuilder()
 ---
 
 ### 问题 31：`toBuilder()` 不携带监听器
+
+> ✅ **1.1.1 已修复**：`DefaultAgent.toBuilder()` 补上了 `.listener(listener)`，
+> 派生多少层都保留监听器。
+> 回归断言：`exp-12` `OfflinePathTest.derivedAgentKeepsListeners`。
+> 下面保留的是 1.1.0 当时的原始记录。
 
 **现象.** 从已有 Agent 派生副本后，副本的运行**不会**进入任何 `AgentListener`
 （统计、审计、指标、子代理记账全部静默丢失）。

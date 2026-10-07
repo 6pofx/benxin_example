@@ -173,10 +173,13 @@ class ToolDeclarationTest extends AbstractToolTest {
                 ToolFixtures.methodOf(ParamAnnotationTools.class, "param_default"));
         assertThat(ToolFixtures.textArray(schema.get("required")))
                 .doesNotContain("unit", "limit", "ratio", "flag", "mode");
-        // 已知口径：注解值是 String，于是 int 参数的 default 也被写成字符串
+        // 1.1.1 修复（FINDINGS 第 7 条）：defaultValue 现在按 schema 的 type 转换 ——
+        // int 参数的 default 是数字 200，而不是字符串 "200"（严格模式的上游不会再报类型不匹配）。
+        // 注意实现走的是 Long.parseLong，所以节点是 LongNode：用 isIntegralNumber() 判断更稳。
         assertThat(schema.at("/properties/limit/type").asText()).isEqualTo("integer");
-        assertThat(schema.at("/properties/limit/default").isTextual()).isTrue();
-        assertThat(schema.at("/properties/limit/default").asText()).isEqualTo("200");
+        assertThat(schema.at("/properties/limit/default").isTextual()).isFalse();
+        assertThat(schema.at("/properties/limit/default").isIntegralNumber()).isTrue();
+        assertThat(schema.at("/properties/limit/default").asInt()).isEqualTo(200);
     }
 
     // ------------------------------------------------------------------
@@ -250,9 +253,10 @@ class ToolDeclarationTest extends AbstractToolTest {
         assertThat(capped.get("type").asText()).isEqualTo("object");
         assertThat(capped.has("properties")).isFalse();
 
-        // 已知缺陷：深度闸门在类型判断之前生效，于是第 5 层的 String 字段也变成 object
+        // 1.1.1 修复（FINDINGS 第 8 条）：深度闸门挪进了"展开 POJO"那一支，
+        // 于是第 5 层的 String 字段仍然是 string —— 标量不再被降级成 object。
         assertThat(tree.at("/properties/child/properties/child/properties/child"
-                + "/properties/child/properties/name/type").asText()).isEqualTo("object");
+                + "/properties/child/properties/name/type").asText()).isEqualTo("string");
     }
 
     @Test

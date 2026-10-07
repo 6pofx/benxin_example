@@ -76,8 +76,7 @@ class LlmWebEndpointTest extends ObservabilityTestSupport {
         return local.getForEntity(url(path) + "?message={m}", byte[].class, message);
     }
 
-    /** 取 SSE 报文里出现过的事件名（去重、保序）。 */
-    private static List<String> eventTypes(String body) {
+    /** 取 SSE 报文里出现过的事件名（去重、保序）。 */    private static List<String> eventTypes(String body) {
         return body.lines()
                 .filter(line -> line.startsWith("event:"))
                 .map(line -> line.substring("event:".length()).trim())
@@ -292,13 +291,49 @@ class LlmWebEndpointTest extends ObservabilityTestSupport {
     }
 
     @Test
-    @DisplayName("契约①' 未知 Agent 名在 SSE 端点上同样是 404（同一个异常处理器）")
-    void contractUnknownAgentOnStreamReturns404() {
-        ResponseEntity<String> response =
-                rest.getForEntity(url("/agents/doesNotExist/stream?message=hello"), String.class);
+    @DisplayName("契约⓪ stream 开关真的被消费：同一个 /chat 端点，stream=true 返回 SSE、false 返回 JSON")
+    void chatChannelFollowsTheStreamFlag() {
+        // 两个 Agent 的唯一差别就是接口上有没有写 @LlmAgent(stream = true)
+        // （1.1.0 时这个开关是死配置 —— 写与不写都返回 JSON，见 FINDINGS 第 2 条）。
+        ResponseEntity<byte[]> streaming = rest.postForEntity(url("/agents/streamingAssistant/chat"),
+                Map.of("message", "自我介绍"), byte[].class);
+        ResponseEntity<byte[]> json = rest.postForEntity(url("/agents/chatAssistant/chat"),
+                Map.of("message", "自我介绍"), byte[].class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody()).contains("doesNotExist");
+        assertThat(String.valueOf(streaming.getHeaders().getContentType()))
+                .as("stream = true → SSE 通道")
+                .startsWith(MediaType.TEXT_EVENT_STREAM_VALUE);
+        assertThat(new String(streaming.getBody(), StandardCharsets.UTF_8)).contains("event:done");
+
+        assertThat(String.valueOf(json.getHeaders().getContentType()))
+                .as("没写 stream → 保持 JSON")
+                .startsWith(MediaType.APPLICATION_JSON_VALUE);
+        assertThat(new String(json.getBody(), StandardCharsets.UTF_8)).contains("\"agent\":\"chatAssistant\"");
+    }
+
+    @Test
+    @DisplayName("契约①' 未知 Agent 在 SSE 端点上：1.1.0 是 404，1.1.1 变成 500（新回归，见 FINDINGS 第 32 条）")
+    void contractUnknownAgentOnStreamReturns404() {
+        // 先对照 /chat：同一个 @ExceptionHandler，这里始终是 404（契约没变）。
+        // 注意 /chat 是 POST 端点，用 GET 会先撞上 405 —— 那验证的就不是异常处理器了。
+        ResponseEntity<String> chat = rest.postForEntity(url("/agents/doesNotExist/chat"),
+                Map.of("message", "hello"), String.class);
+        assertThat(chat.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        // /stream 在 1.1.0 也是 404（与 /chat 同一个异常处理器）。
+        // 1.1.1 修"SSE 未声明 charset"（FINDINGS 第 10 条）时，把
+        // response.setContentType("text/event-stream;charset=UTF-8") 提到了
+        // agentRegistry.get(name) **之前** —— 于是异常处理器想把 Map 写成 JSON 时，
+        // 响应上已经预设了 SSE 的 Content-Type：
+        //   HttpMessageNotWritableException: No converter for [class java.util.LinkedHashMap]
+        //   with preset Content-Type 'text/event-stream;charset=UTF-8'
+        // 最终变成 500。这是**新引入的回归**，不是我们当初钉住的旧行为。
+        // 期望（文档与 1.1.0 一致）：仍然是 404。
+        ResponseEntity<String> stream =
+                rest.getForEntity(url("/agents/doesNotExist/stream?message=hello"), String.class);
+        assertThat(stream.getStatusCode())
+                .as("1.1.1 回归：文档承诺 404，实测 500（见 FINDINGS 第 32 条）")
+                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @Test
@@ -417,23 +452,22 @@ class LlmWebEndpointTest extends ObservabilityTestSupport {
     }
 
     @Test
-    @DisplayName("契约⑥'' SSE 的 Content-Type 不带 charset：字节确实是 UTF-8，但客户端必须自己按 UTF-8 解")
-    void contractSseCharsetIsNotDeclared() {
+    @DisplayName("契约⑥'' SSE 的 Content-Type 现在带 charset=UTF-8（1.1.1 修复），客户端不必再手工解码")
+    void contractSseCharsetIsDeclared() {
         ResponseEntity<byte[]> response = sseBytes("/agents/chatAssistant/stream", "自我介绍");
 
-        // 实测：produces = MediaType.TEXT_EVENT_STREAM_VALUE，响应头里没有 charset。
-        // Spring 的 StringHttpMessageConverter 对 text/* 默认按 ISO-8859-1 解，
-        // 于是用 body(String.class)/getForEntity(..., String.class) 拿到的中文是乱码
-        // （见 ObservabilityDemo 里"按 UTF-8 显式解字节"的说明）。
+        // 1.1.0：produces = MediaType.TEXT_EVENT_STREAM_VALUE，响应头里**没有** charset，
+        // 而 Spring 的 StringHttpMessageConverter 对 text/* 默认按 ISO-8859-1 解 ——
+        // 于是 body(String.class) 拿到的中文必然是乱码（FINDINGS 第 10 条）。
+        // 1.1.1：控制器显式写了 text/event-stream;charset=UTF-8，客户端可以放心按 String 读。
         assertThat(String.valueOf(response.getHeaders().getContentType()))
                 .startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)
-                .doesNotContain("charset");
+                .contains("charset=UTF-8");
 
-        // 字节本身是合法 UTF-8：显式解码就能看到中文（说明服务端没发错编码，只是没声明）
+        // 字节本身仍是合法 UTF-8（两种解法的对照保留下来，作为"为什么必须声明 charset"的注脚）
         String decoded = new String(response.getBody(), StandardCharsets.UTF_8);
         assertThat(decoded).contains("event:delta");
         assertThat(decoded).contains("离线模型");
-        // 反过来，按 ISO-8859-1 解就会坏掉 —— 这正是 Spring 客户端的默认选择
         assertThat(new String(response.getBody(), StandardCharsets.ISO_8859_1)).doesNotContain("离线模型");
     }
 }

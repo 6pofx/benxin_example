@@ -40,3 +40,12 @@ replay_pid*.log
 /.env
 /.env.local
 /.probe-*
+# 提交时临时用来传递多行中文提交信息、跑一次性脚本的辅助文件
+# （踩过一次：`git add -A` 把 .commit-msg.txt 一起提交了，所以这里锚定它们）
+/.commit-msg.txt
+/.msg*.txt
+/.git-*.cmd
+/.git-*.log
+/.verify-*.cmd
+/.verify-*.log
+/.clone-check/

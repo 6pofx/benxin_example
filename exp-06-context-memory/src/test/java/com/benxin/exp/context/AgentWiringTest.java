@@ -129,14 +129,18 @@ class AgentWiringTest extends AbstractContextMemoryTest {
     }
 
     @Test
-    @DisplayName("toBuilder() 之后再用 model(\"名字\") 不会换模型（builder 里已经带着模型实例）")
-    void derivedAgentIgnoresModelName() {
+    @DisplayName("toBuilder() 之后 model(\"名字\") 能换模型（1.1.1 修复：两个重载后来者胜）")
+    void derivedAgentHonoursModelName() {
+        // 1.1.0 时这里会继续用原模型（"mock"）：AgentBuilder 同时持有实例与名字，
+        // 而 toBuilder() 已经塞进了实例、DefaultAgent 又"实例优先" ⇒ 名字被静默忽略
+        // （本工程上报为 FINDINGS 第 30 条）。1.1.1 起 model(String) 把实例置空、
+        // model(LlmModel) 把名字置空 —— 后来者胜，两种写法都能换模型。
         Agent derived = agent("memoryAssistant").toBuilder().model("vision").build();
+        assertThat(derived.model().name())
+                .as("1.1.1 修复：按名字换模型在派生副本上生效")
+                .isEqualTo("vision");
 
-        // AgentBuilder.model(String) 只设置"待解析的名字"，而 toBuilder() 已经把模型实例放进去了，
-        // DefaultAgent 优先用实例 → 名字被静默忽略，换模型必须传实例
-        assertThat(derived.model().name()).isEqualTo("mock");
-
+        // 传实例依然可用
         Agent switched = agent("memoryAssistant").toBuilder().model(visionModel).build();
         assertThat(switched.model().name()).isEqualTo("vision");
     }

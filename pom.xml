@@ -64,7 +64,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- 被演示的插件版本：与本地仓库中已安装的 benxin 保持一致 -->
-        <benxin.version>1.1.0</benxin.version>
+        <benxin.version>1.1.1</benxin.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     </properties>
 

@@ -80,14 +80,9 @@ class LocalLmStudioTest {
     }
 
     private Agent local(String agentName) {
-        // 传模型**实例**而不是名字，并显式补回监听器：
-        //   · model(String) 在派生副本上会被静默忽略（DefaultAgent 的解析顺序是"实例优先"）；
-        //   · toBuilder() 不携带监听器，不补则真实调用不会进统计。
-        // 两条都是实测行为，见 FINDINGS.md 问题 30 / 31。
-        return agentRegistry.get(agentName).toBuilder()
-                .model(modelRegistry.get(LOCAL_MODEL))
-                .listener(metrics)
-                .build();
+        // 只按名字换模型即可：1.1.1 起 model(String) 在派生副本上生效，且 toBuilder() 会带上监听器
+        // （1.1.0 时这两件事都不成立，那时必须传实例并显式 .listener(metrics) —— 见 FINDINGS 30 / 31）。
+        return agentRegistry.get(agentName).toBuilder().model(LOCAL_MODEL).build();
     }
 
     @Test
@@ -180,10 +175,10 @@ class LocalLmStudioTest {
     @DisplayName("真实 Loop 对照：两个副本只差 loop，都能跑通")
     void realLoops() {
         AgentResult minimal = local("localAssistant").toBuilder()
-                .loop(loopRegistry.get("dsh-minimal")).build()
+                .loop("dsh-minimal").build()
                 .call("回答一个字：好", "real-loop-1", null);
         AgentResult react = local("localAssistant").toBuilder()
-                .loop(loopRegistry.get("react")).build()
+                .loop("react").build()
                 .call("回答一个字：好", "real-loop-2", null);
 
         assertThat(minimal.loopName()).isEqualTo("dsh-minimal");

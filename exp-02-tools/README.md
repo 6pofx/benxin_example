@@ -2,7 +2,7 @@
 
 > 一个普通 Java 方法 + 一个注解 = 模型能调用的工具。本模块只做这一件事，把它做穿。
 
-本模块把「本心 benxin 1.1.0」的工具（Tool）切面从上到下演示一遍：
+本模块把「本心 benxin」的工具（Tool）切面从上到下演示一遍：
 **声明（注解 / 程序化）→ JSON Schema 自动生成 → 装配（工具来源）→ 执行（上下文 / 并行 / 直达 / 异常）→ 结果回灌**。
 **默认离线、零 token**：模型来自 `exp-common` 的脚本化模型（`ScriptedLlmModel`）与本模块的
 `support/ScriptedToolCallModel`，`mvn spring-boot:run` 立刻能看到 14 组输出，`mvn test` 把每条结论都钉成用例。
@@ -133,9 +133,15 @@ src/test/java/com/benxin/exp/tools/
 * 本模块的工具调用**不用** exp-common 的 `#tool:名字 {JSON}` 语法驱动，改用
   `support/ScriptedToolCallModel`：原因见下面「非插件问题」第 1 条。
 
-## 插件问题（本心 1.1.0，实测；示例只如实断言，不修改插件）
+## 插件问题（1.1.0 实测；示例只如实断言，不修改插件）
 
-每条都有可复现的证据：源码行号 + 本模块的演示/测试。
+> **状态（1.1.1）**：本节记录的是 **1.1.0** 的实测结果。插件 1.1.1 已修复其中的
+> `AgentSession` 注入、`required` 运行期校验、`defaultValue` 的类型、schema 深度截断、
+> `@LlmTool` 的 `requiresApproval`/`parallelSafe`，并把架构文档里的关卡顺序改成与实现一致。
+> 本模块的断言已同步为"钉住新行为"（见 `ToolExecutionTest` / `ToolDeclarationTest`），
+> 逐条对应与回归断言见根目录 `FINDINGS.md` 第一节.5。
+
+每条都有可复现的证据：源码行号 + 本模块的演示/测试。下面是 1.1.0 当时的现象记录。
 
 1. **`AgentSession` 参数被声明为"可注入"，实际注入 `null`。**
    `JsonSchemaGenerator.isInjected`（`JsonSchemaGenerator.java:74-77`）把它和 `ToolContext` 并列，

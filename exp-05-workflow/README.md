@@ -86,11 +86,14 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8，或�
    不进访问表（它压根没有执行）。
 7. **`not contains` 是支持的**，别把它当成"没实现"而绕远路去写 `not (${x} contains y)`（两者等价）。
    `not` 是**前缀否定**，作用在整个比较上。
-8. **★ 条件表达式里的 `${x:-兜底}` 不生效。** `:-` 只有模板渲染 `Templates.render` 才认；
-   `Conditions` 会把 `x:-兜底` 当成**变量名**去查表，查不到就是 `null` ⇒ 数值比较判 `false`、
-   `is empty` 判 `true`。所以"循环计数器"这类变量必须在**上游 `set` 节点先播种**，
-   不能指望条件里的 `:-` —— 这一格是**静的**：写错了不会报错，只会让那条边永远不成立
-   （`triage.yml` 的 `check` 条件原本就是这么写的，`ConditionsTest.fallbackInsideConditionsDoesNotWork` 钉住了实测口径）。
+8. **★ 条件表达式里的 `${x:-兜底}`：1.1.1 起生效（1.1.0 不生效，已在 1.1.1 修复）。**
+   1.1.0 时 `Conditions` 会把 `x:-兜底` 当成**变量名**去查表，查不到就是 `null` ⇒ 数值比较判 `false`、
+   `is empty` 判 `true` —— 那一格是**静的**：写错了不报错，只让那条边永远不成立。
+   1.1.1 起 `:-` 与模板渲染同一套语义，**兜底值按字面量解析**（数字 / `true` / `false` / `null` / 其余当字符串），
+   所以 `${retryCount:-0} <= 2` 是数值比较。
+   本模块把这次变更钉成了两条回归断言：`ConditionsTest.fallbackInsideConditionsWorks`（语法层）
+   与 `WorkflowEngineTest.fallbackInsideBranchConditionsWorks`（真的走通那条分支）；
+   `triage.yml` 的回边条件也改回了 `${rounds:-0}` 的自然写法。
 9. **`tool` 节点的返回值不会自动写回变量表。** 引擎只把节点输出记在**节点 id** 名下（`${bump}`），
    而循环条件读的往往是你自己起的变量名（`${count}`）。少了那个 `set` 节点，
    `${count}` 永远是初值、条件永远成立，图会一直转到 `maxVisitsPerNode` 才被拦下 ——

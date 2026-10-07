@@ -139,7 +139,7 @@ class MessageApiTest {
     }
 
     @Test
-    @DisplayName("withText 只替换文本，思维链与工具调用原样保留（顺序：文本在前）")
+    @DisplayName("withText：文本消息替换 TextPart（思维链/工具调用保留），工具消息替换工具结果内容")
     void withTextKeepsOtherParts() {
         ChatMessage original = ChatMessage.assistant(List.of(
                 new ThinkingPart("想"),
@@ -155,19 +155,24 @@ class MessageApiTest {
         // 原对象不可变
         assertThat(original.text()).isEqualTo("旧文本");
 
-        // 工具消息被改写时 name / toolCallId 必须保住（否则回灌协议会对不上号）
+        // 工具消息被改写时 name / toolCallId / error 必须保住（否则回灌协议会对不上号）
         ChatMessage tool = ChatMessage.toolResult("call_1", "read_file", "很长的结果", false);
         ChatMessage shortened = tool.withText("压缩后的占位");
         assertThat(shortened.name()).isEqualTo("read_file");
         assertThat(shortened.toolCallId()).isEqualTo("call_1");
-        // 但要注意 withText 的真实行为：它把新文本块插到最前，并"保留"原来的 ToolResultPart，
-        // 而 text() 是 TextPart 与 ToolResultPart 的拼接 —— 于是 text() 反而更长。
-        // 真要把工具结果改短，必须用 ChatMessage.toolResult(...) 重建
-        // （claude-code Loop 的上下文压缩正是这么做的）。
-        assertThat(shortened.parts()).hasSize(2);
-        assertThat(shortened.parts().get(0)).isEqualTo(new TextPart("压缩后的占位"));
-        assertThat(shortened.text()).isEqualTo("压缩后的占位很长的结果");
-        assertThat(((ToolResultPart) shortened.parts().get(1)).error()).isFalse();
+        // 工具消息的"文本"就是工具结果本身，所以 withText 替换的是 ToolResultPart.content，
+        // 而不是把新文本块插在最前面再保留旧内容（那样 text() 反而更长，越压越大）。
+        assertThat(shortened.parts()).hasSize(1);
+        assertThat(shortened.parts().get(0))
+                .isEqualTo(new ToolResultPart("call_1", "read_file", "压缩后的占位", false));
+        assertThat(shortened.text()).isEqualTo("压缩后的占位");
+
+        // error 标记也要原样保留：失败的工具结果被压缩后仍然必须是"失败"
+        ChatMessage failed = ChatMessage.toolResult("call_2", "boom", "炸了", true);
+        ToolResultPart failedPart = (ToolResultPart) failed.withText("压缩后的占位").parts().get(0);
+        assertThat(failedPart.error()).isTrue();
+        assertThat(failedPart.toolUseId()).isEqualTo("call_2");
+        assertThat(failedPart.content()).isEqualTo("压缩后的占位");
     }
 
     @Test

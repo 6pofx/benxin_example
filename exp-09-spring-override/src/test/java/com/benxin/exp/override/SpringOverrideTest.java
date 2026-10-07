@@ -501,9 +501,18 @@ class SpringOverrideTest {
         var spec = agentFactory.specOf(SupportAssistant.class);
         assertThat(spec.name()).isEqualTo("supportAssistant");
         assertThat(spec.model()).isNull();          // 注解没写 model → 用全局默认
-        // 装配过的 Agent 都被它记下来了（LlmAgentFactoryBean 是 eager-init 的 SmartFactoryBean，
-        // 所以启动期就会走一遍 create —— 冷启动即可见）。
-        assertThat(demoAgentFactory.builtAgents()).contains("supportAssistant", "toolAssistant");
+
+        // 装配过的 Agent 会被这个工厂记下来。
+        //
+        // 1.1.0：LlmAgentFactoryBean 的 getObject() 里就把 Agent 装好（"冷启动即可见"），
+        //        所以**启动期**builtAgents() 里就已经有全部 Agent。
+        // 1.1.1：getObject() 只建代理 + 登记惰性条目，装配推迟到**首次解析**
+        //        （agentRegistry.get / 一次调用）—— 启动更快，但"配置错误在启动期暴露"
+        //        变成了"第一次调用才暴露"。
+        // 这里不能断言"此刻列表为空"：同一个 ApplicationContext 被本类多个用例共享，
+        // 别的用例可能已经把 Agent 解析过了。所以只断言"解析之后它一定在列表里"。
+        assertThat(agentRegistry.get("supportAssistant")).isNotNull();
+        assertThat(demoAgentFactory.builtAgents()).contains("supportAssistant");
     }
 
     // ==================================================================

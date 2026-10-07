@@ -402,8 +402,8 @@ public class ContextMemoryDemo implements ApplicationRunner {
         demo.ok("② SlidingWindowCompactor：下发 %d 条，模型被调用 %d 次（纯丢弃，成本为 0）",
                 bySliding.size(), tinyModel.count());
         demo.info("   被丢弃的位置会插一条说明：%s", oneLine(bySliding.get(1).text()));
-        demo.warn("   注意：插件 1.1.0 的 SlidingWindowCompactor 一旦触发压缩就只保留最后 1 条历史"
-                + "（keepRecent 写 4 还是 8 结果都一样），详见 README「插件问题」");
+        demo.info("   keepRecent 是**下限**：预算再紧也不会丢到少于它，宽裕时还会多留。"
+                + "（1.1.0 时这一格是「只留最后 1 条」，1.1.1 已修复 —— 见 README「插件问题」）");
 
         // ③ none()：什么都不做
         List<ChatMessage> byNone = new DefaultContextManager(ContextCompactor.none(), tokenEstimator,

@@ -343,8 +343,11 @@ public class DefaultOverrideConfiguration {
                                                AgentRegistry agentRegistry,
                                                ObjectProvider<LlmInterceptorChain> interceptorChainProvider,
                                                ObjectProvider<AgentListener> listenerProvider) {
+        // 1.1.1 起 LlmAgentFactory 把沙箱与审批器收成了 ObjectProvider（支持按 Agent 选），
+        // 所以这里用 DemoLlmAgentFactory.fixed(...) 把容器里那一个实例包进去。
         return new DemoLlmAgentFactory(properties, modelRegistry, loopRegistry, toolCatalog,
-                contextManager, memoryStore, systemPromptProvider, sandbox, approvalHandler,
+                contextManager, memoryStore, systemPromptProvider,
+                DemoLlmAgentFactory.fixed(sandbox), DemoLlmAgentFactory.fixed(approvalHandler),
                 agentRegistry, interceptorChainProvider, listenerProvider);
     }
 

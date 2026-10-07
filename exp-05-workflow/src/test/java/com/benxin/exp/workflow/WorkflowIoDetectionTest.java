@@ -67,13 +67,17 @@ class WorkflowIoDetectionTest {
     }
 
     @Test
-    @DisplayName("对照：同一份 flow 文本，显式按 JSON 读也是同一句错（证明它真的走了 JSON 分支）")
+    @DisplayName("flow 风格 YAML 的报错：1.1.1 起两条路径都给出「它其实是 YAML」的可操作建议")
     void flowStyleYamlUnderJsonFormatFailsTheSameWay() {
         String auto = messageOf(() -> WorkflowIo.read(FLOW_STYLE_YAML));
         String forced = messageOf(() -> WorkflowIo.read(FLOW_STYLE_YAML, WorkflowIo.Format.JSON));
 
+        // 1.1.0 时两条路径都只有一句"非法 JSON"（把排查引向 JSON 括号）；
+        // 1.1.1 起自动识别与显式 JSON 都会点明"这其实是 YAML 的 flow 风格"并给出两条出路
+        // （FINDINGS 第 15 条）。两条路径的文案一致，所以这里对它们做同一组断言。
+        assertThat(auto).startsWith("工作流定义看起来像 JSON");
+        assertThat(auto).contains("YAML", "Format.YAML");
         assertThat(forced).isEqualTo(auto);
-        assertThat(forced).startsWith("非法 JSON");
     }
 
     private static String messageOf(Runnable body) {

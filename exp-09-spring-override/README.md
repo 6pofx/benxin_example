@@ -185,7 +185,15 @@ Windows 控制台如果显示乱码，先 `chcp 65001`，或者认准上面那�
 
 ## 几条"按直觉猜会猜错"的口径
 
-这些是本模块实测出来、并写进测试的结论：
+> **状态（1.1.1）**：下面第 1、2、3 条（`stream` 死配置、`@LlmRetry` 死注解、
+> `@LlmLoop(defaultLoop=true)` 轮不到）**都已在 1.1.1 修复**，本模块的断言已改成"钉住新行为"
+> （见 `DeadConfigurationTest` / `AnnotationRegistrationTest`）。
+> 另外 1.1.1 还带来两处变化值得知道：Agent 改为**首次解析时**才装配（不再冷启动预装配）；
+> `ToolSandbox`/`ApprovalHandler` 改成 `ObjectProvider` 注入，所以覆写 `LlmAgentFactory`
+> 的子类要跟着改构造签名（本模块的 `DemoLlmAgentFactory` 已改）。
+> 逐条对应见根目录 `FINDINGS.md` 第一节.5。
+
+这些是本模块实测出来、并写进测试的结论（下面保留的是 **1.1.0** 当时的记录）：
 
 1. **`llm.agent.stream` / `@LlmAgent(stream = true)` 是死配置。**
    它们确实会被写进 `AgentSpec.stream()`（`LlmAgentFactory:120`），但**插件里没有任何一处读它**。

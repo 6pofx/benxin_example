@@ -87,9 +87,12 @@ class CompactorTest extends AbstractContextMemoryTest {
         assertThat(prepared).anySatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩] 为控制上下文长度"));
         assertThat(prepared.size()).isLessThan(history.size() + 1);
         assertThat(prepared.get(0).role()).isEqualTo(Role.SYSTEM);
-        // 实际只留下最后 1 条历史（插件 1.1.0 的实现缺陷，详见 ContextManagerTest 与 README「插件问题」）：
-        // 期望是"系统 + 占位 + 4 条"，实测是"系统 + 占位 + 1 条"
-        assertThat(prepared).hasSize(3);
+        // 修复前这里恒为"系统 + 占位 + 1 条"（keepRecent 形同虚设）。
+        // 现在 keepRecent 是**下限**：至少留下最近 KEEP_RECENT 条，预算宽裕时还会多留。
+        long kept = prepared.stream().filter(history::contains).count();
+        assertThat(kept).isGreaterThanOrEqualTo(ContextPipelineConfiguration.KEEP_RECENT);
+        assertThat(kept).isLessThan(history.size());
+        assertThat(prepared).hasSize((int) kept + 2);      // 系统 + 占位 + 保留的历史
     }
 
     @Test
@@ -141,7 +144,12 @@ class CompactorTest extends AbstractContextMemoryTest {
         assertThat(wide).hasSize(history.size() + 1);
         assertThat(wide).noneSatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
         assertThat(narrow).anySatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
-        assertThat(narrow.size()).isLessThan(wide.size());
+        // 修复前两种窗口都只留最后 1 条，size 恰好相等，于是这条断言挂掉；
+        // 现在按"预算内尽量多留、但不少于 keepRecent"压缩：窄窗口确实丢了消息，但不会丢到 1 条。
+        long keptWide = wide.stream().filter(history::contains).count();
+        long keptNarrow = narrow.stream().filter(history::contains).count();
+        assertThat(keptNarrow).isLessThan(keptWide);
+        assertThat(keptNarrow).isGreaterThanOrEqualTo(4);
     }
 
     @Test
@@ -161,17 +169,19 @@ class CompactorTest extends AbstractContextMemoryTest {
     }
 
     @Test
-    @DisplayName("摘要式压缩器在「最近消息本身就超预算」时退化为滑动窗口，不会挂掉")
+    @DisplayName("keepRecent 比历史还长时：摘要无从下手，压缩器一条都不丢、也不调模型")
     void summarizingCompactorFallsBackToSlidingWindow() {
-        // keepRecent 比实际历史还大 → split = 0，摘要无从下手，只能走滑动窗口
+        // keepRecent 比实际历史还大 → split = 0，摘要无从下手，只能走滑动窗口兜底
         List<ChatMessage> history = primedHistory("compact-h", 4);
         tinyModel.reset();
 
         List<ChatMessage> prepared = contextCompactor.compact(history, tinyModel, 99);
 
         assertThat(prepared).isNotEmpty();
-        assertThat(prepared).anySatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
-        // 退化为滑动窗口之后，摘要是不会发生的（也就没有额外模型调用）
+        // 契约：keepRecent 是**下限**。调用方要求"至少留 99 条"，历史只有这么几条，
+        // 于是一条都不能丢 —— 修复前这里会把整段历史砍到只剩最后 1 条（数据丢失）。
+        assertThat(prepared).containsExactlyElementsOf(history);
+        // 也就没有发生摘要（没有任何额外模型调用）
         assertThat(tinyModel.count()).isZero();
     }
 

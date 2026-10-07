@@ -675,26 +675,30 @@ class ProtocolWireTest {
 
     @Test
     @Order(32)
-    @DisplayName("真实行为档案：流式路径收到「非 SSE 的整包响应」时是静默的空回答，不报错")
-    void nonSseBodyOnStreamingPathIsSilentlyEmpty() {
+    @DisplayName("流式路径收到「非 SSE 的整包响应」时抛可读的 ModelException（1.1.1 修复）")
+    void nonSseBodyOnStreamingPathFailsReadably() {
         scenario.resetStub();
-        // 网关（或写错的桩）对流式请求回了一整包普通 JSON。
-        // JdkHttpTransport 只看状态码，于是它被当成"一条事件都没有的 SSE 流"：
-        // SseParser 一个事件都解析不出来 → 解码器的 finish() 兜底收尾 →
-        // StreamCollector 拿到一个空响应，而 error 是 null。
+        // 网关（或写错的桩）对流式请求回了一整包普通 JSON（Content-Type: application/json）。
+        // 1.1.0：JdkHttpTransport 只看状态码 → 当成"一条事件都没有的 SSE 流" →
+        //        SseParser 解析不出事件 → 解码器 finish() 兜底 → 调用方拿到**静默的空回答**
+        //        （text="" / error=null / finishReason=UNKNOWN），排查方向被彻底带偏
+        //        —— 本工程上报为 FINDINGS 第 25 条。
+        // 1.1.1：传输层按 Content-Type 判定"这不是 SSE"，交回普通响应，
+        //        于是 HttpLlmModel 抛出它本来就写好的那条可读异常。
         scenario.stub().onPath("/v1/chat/completions", request -> StubHttpServer.Reply.json(
                 OpenAiWire.textResponse(OpenAiWire.MODEL, "这段正文不会出现在任何地方", "stop", 9, 3)));
 
         StreamResult result = new WireScenario(models, transport)
                 .streamDirect(WireConstants.OPENAI_KEY, WireConstants.request());
 
-        assertThat(result.error()).isNull();
+        assertThat(result.error())
+                .as("1.1.1 修复：不再静默给空，而是明确报错")
+                .isInstanceOf(com.benxin.llm.core.model.ModelException.class);
+        assertThat(result.error().getMessage())
+                .contains("postStreaming", "非流式")
+                // 异常里带上响应体，便于判断上游到底回了什么
+                .contains("这段正文不会出现在任何地方");
         assertThat(result.text()).isEmpty();
-        assertThat(result.usage()).isEqualTo(com.benxin.llm.core.chat.Usage.ZERO);
-        // 解码器仍然收尾了（finish() 兜底），所以不是"卡住"，而是"悄悄给了空"
-        assertThat(result.response()).isNotNull();
-        // 连一个分片都没收到，因此结束原因只能落到 UNKNOWN —— 这也是"上游没按协议回"的信号之一
-        assertThat(result.response().finishReason()).isEqualTo(FinishReason.UNKNOWN);
     }
 
     // ==================================================================

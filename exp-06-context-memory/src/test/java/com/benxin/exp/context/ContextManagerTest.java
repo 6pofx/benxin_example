@@ -142,14 +142,17 @@ class ContextManagerTest extends AbstractContextMemoryTest {
         }
 
         List<ChatMessage> strict = manager(new SlidingWindowCompactor(tokenEstimator, 0.2, 4096),
-                tokenEstimator, 0.2, 4, 4096).prepare(SYSTEM, history, tinyModel);
+                tokenEstimator, 0.2, 1, 4096).prepare(SYSTEM, history, tinyModel);
         List<ChatMessage> loose = manager(new SlidingWindowCompactor(tokenEstimator, 0.95, 4096),
-                tokenEstimator, 0.95, 4, 4096).prepare(SYSTEM, history, tinyModel);
+                tokenEstimator, 0.95, 1, 4096).prepare(SYSTEM, history, tinyModel);
 
-        // tiny 窗口 6000、预留输出 4096 → 输入预算 1904；这条历史的估算在 380 与 1808 之间
+        // tiny 窗口 6000、预留输出 4096 → 输入预算 1904；这条历史的估算在 380 与 1808 之间。
+        // keepRecent 取 1：预算紧到"连一条都放不下"时才能观察到压缩真的丢消息
+        // （keepRecent 是下限，取 4 而历史只有 3 条时压缩器不允许丢任何一条）。
         assertThat(strict).anySatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
+        assertThat(strict.size()).isLessThan(loose.size());
         assertThat(loose).noneSatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
-        assertThat(loose).hasSize(4);    // 1 系统 + 3 历史，一条不丢
+        assertThat(loose).hasSize(1 + history.size());    // 1 系统 + 3 历史，一条不丢
     }
 
     @Test
@@ -195,32 +198,29 @@ class ContextManagerTest extends AbstractContextMemoryTest {
     }
 
     @Test
-    @DisplayName("SlidingWindowCompactor 实际只留下最后 1 条（插件 1.1.0 的实现缺陷，见 README「插件问题」）")
-    void slidingWindowKeepsOnlyTheLastConversationMessage() {
+    @DisplayName("keepRecent 是「下限」：压缩后至少留下最近这么多条，预算宽裕时还会多留")
+    void keepRecentIsALowerBound() {
+        // 6 条 600 字符的 ASCII 历史，用本示例的估算器：每条 12 + 300 + 8 = 320 token，合计 1920；
+        // tiny 窗口 6000 − 预留输出 4096 = 1904 输入预算，触发线 0.8 × 1904 = 1523 → 必然压缩。
         List<ChatMessage> history = asciiMessages(6, 600, "keep");
 
-        // 同一份历史、同一个预算，只改 keepRecent：8 和 2 的结果完全一样
         List<ChatMessage> keepEight = manager(new SlidingWindowCompactor(tokenEstimator, 0.8, 4096),
                 tokenEstimator, 0.8, 8, 4096).prepare(SYSTEM, history, tinyModel);
         List<ChatMessage> keepTwo = manager(new SlidingWindowCompactor(tokenEstimator, 0.8, 4096),
                 tokenEstimator, 0.8, 2, 4096).prepare(SYSTEM, history, tinyModel);
 
-        // 按接口 javadoc 的"至少保留 keepRecent 条"应当是"系统 + 6 条 / 系统 + 占位 + 2 条"，
-        // 实测两种情况都只有"系统 + 占位 + 1 条"。
-        assertThat(keepEight).hasSize(3);
-        assertThat(keepTwo).hasSize(3);
-        assertThat(keepEight.get(0).role()).isEqualTo(Role.SYSTEM);
-        assertThat(keepEight.get(1).text()).contains("[本心上下文压缩]");
-        // 留下的那一条是最后一条历史（第 6 条）
-        assertThat(keepEight.get(2).text()).isEqualTo(history.get(5).text());
-        assertThat(keepTwo.get(2).text()).isEqualTo(history.get(5).text());
-        assertThat(keepEight).isEqualTo(keepTwo);
+        // keepRecent = 8 比历史本身还长 → 一条都不能丢（下限说了算），也就没有占位提示
+        assertThat(keepEight).hasSize(1 + history.size());
+        assertThat(keepEight).noneSatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
 
-        // 代码级原因：SlidingWindowCompactor#compact 的 for 循环把 start 当成循环下界，
-        // 却在循环体里改写它 —— 第一轮（candidate = size-1）落下 start = size-1 之后，
-        // 第二轮就因 candidate < start 立即退出，于是"永远只留最后一条"。
-        // 相关细节：压缩器内部预算另有 1024 的下限（max(1024, ...)），
-        // 与 ContextManager 的输入预算不是同一个口径。
+        // keepRecent = 2 → 至少留 2 条；预算还宽裕时按预算多留（上限由体积决定）
+        assertThat(keepTwo).anySatisfy(m -> assertThat(m.text()).contains("[本心上下文压缩]"));
+        long kept = keepTwo.stream().filter(history::contains).count();
+        assertThat(kept).isGreaterThanOrEqualTo(2).isLessThan(history.size());
+        // 留下的必须是"最近的"那些：尾部对齐
+        assertThat(keepTwo.get(keepTwo.size() - 1).text()).isEqualTo(history.get(5).text());
+        // 修复前两种 keepRecent 的结果完全相同（都只剩最后 1 条，keepRecent 是死参数）
+        assertThat(keepEight).isNotEqualTo(keepTwo);
     }
 
     @Test

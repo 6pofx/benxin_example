@@ -93,23 +93,27 @@ assertThat(result.text()).contains("42").contains("红");
 演示打印"这次为什么不跑真实调用"；测试用 `Assumptions.assumeTrue` 跳过而不是失败。
 CI 上没有桌面环境，本地开发者机器上有 —— 同一套代码必须能同时服务这两种场景。
 
-### 3. 顺带挖出两个 `toBuilder()` 的坑（见 `FINDINGS.md` 问题 30 / 31）
+### 3. 顺带挖出两个 `toBuilder()` 的坑（**1.1.1 已修复**，见 `FINDINGS.md` 问题 30 / 31）
 
-写这个模块时踩到的，都不是显而易见的：
+写这个模块时踩到的，两个都不显而易见 —— 而且第一个曾经**伪造出一片绿色**：
 
-* `agent.toBuilder().model("名字")` **静默无效** —— 副本继续用原模型；
-* `agent.toBuilder().loop("名字")` 同样无效；
-* `agent.toBuilder()` **不携带监听器** —— 派生副本的运行不会进任何统计。
+* 1.1.0：`agent.toBuilder().model("名字")` / `.loop("名字")` **静默无效**，
+  副本继续用原模型/原 Loop。（我最初就是按直觉这么写的，测试跑出来"真实模型用例全绿"，
+  其实**一次都没打到 LM Studio**，全在离线 mock 上跑的。）
+* 1.1.0：`agent.toBuilder()` **不携带监听器** —— 派生副本的运行不进任何统计，而且会**层层丢失**。
 
-正确写法是传**实例**并补回监听器：
+**在 1.1.1 上这两件事都修好了**，所以现在的写法就是最自然的那种：
 
 ```java
 Agent local = agentRegistry.get("localAssistant").toBuilder()
-        .model(modelRegistry.get("local-lmstudio"))   // 实例，不是名字
-        .loop(loopRegistry.get("react"))              // 实例，不是名字
-        .listener(metrics)                            // 必须显式补
-        .build();
+        .model("local-lmstudio")     // 1.1.1 起按名字即可（实例重载同样可用，后来者胜）
+        .loop("react")               // 同上
+        .build();                    // 监听器自动继承 —— 不要再补 .listener(...)，会重复计数
 ```
+
+本模块把"修好"这件事也钉成了断言：`OfflinePathTest.nameOverloadsWorkOnDerivedBuilder`
+与 `derivedAgentKeepsListeners`（含"再派生一层也不丢"）。
+在 1.1.0 上这两条会失败、旧的两条（断言"静默无效"）会通过 —— 一个模块同时记录了修复前后两种行为。
 
 ---
 

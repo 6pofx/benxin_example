@@ -78,26 +78,20 @@ class AnnotationRegistrationTest {
     }
 
     @Test
-    @DisplayName("@LlmLoop(defaultLoop = true)：<b>不会</b>成为默认 Loop —— 总有一个配置值先赢（见下方注释）")
+    @DisplayName("@LlmLoop(defaultLoop = true)：1.1.1 起真的会成为默认 Loop（此前被字段初值挡成死代码）")
     void annotatedDefaultBecomesDefaultLoop() {
         runner.withBean("annotatedDefault", AnnotatedDefaultLoop.class, AnnotatedDefaultLoop::new).run(context -> {
             assertThat(context).hasNotFailed();
 
-            // ⚠️ 实测出来的口径（与 @LlmLoop 的注解文档不一致，见 README 的「插件问题」）：
-            // 注解上的 defaultLoop = true 在<b>真实插件里几乎不可能生效</b>。
-            //
-            // LlmAutoConfiguration#llmLoopRegistry 的选举顺序是：
+            // 1.1.0 的选举顺序（本用例当初钉住的就是它）：
             //   ① properties.getAgent().getDefaultLoop() 非空且 registry.contains(它) → 用它
             //   ② 否则用第一个 @LlmLoop(defaultLoop = true) 的名字
             //   ③ 否则字面量 "dsh-minimal"
-            // 而 AgentProperties.defaultLoop 的字段默认值<b>就是 "dsh-minimal"</b>
-            // （LlmProperties.java:295），它又在内置 Loop 表里必然存在 ——
-            // 于是①永远成立，②是死代码。
-            //
-            // 换句话说：只有当显式把 llm.agent.default-loop 写成一个<b>没注册</b>的名字时，
-            // 注解才轮得到（见下一个用例）。这条断言钉住的就是"真实行为"。
-            assertThat(context.getBean(LoopRegistry.class).defaultName()).isEqualTo("dsh-minimal");
-            // 注解的注册名照样生效 —— 失效的只是 defaultLoop 这个选举标记。
+            // 而 AgentProperties.defaultLoop 的**字段初值就是 "dsh-minimal"**（LlmProperties.java:295），
+            // 它又必然在内置表里 ⇒ ①恒真、②是死代码（本工程上报为 FINDINGS 第 20 条）。
+            // 1.1.1 把字段初值改成空：只有"用户显式配置"才压过注解，于是 ② 复活。
+            assertThat(context.getBean(LoopRegistry.class).defaultName()).isEqualTo("fixture-default-loop");
+            // 注册名一直是对的
             assertThat(context.getBean(LoopRegistry.class).contains("fixture-default-loop")).isTrue();
         });
     }

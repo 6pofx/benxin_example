@@ -124,7 +124,12 @@ Windows 控制台如果显示乱码，先执行 `chcp 65001` 切到 UTF-8（或�
 
 ## 插件问题
 
-本模块实测到 3 处「文档说的」与「代码做的」不一致。**没有修改插件**，测试断言的是真实行为。
+> **状态（1.1.1）**：本节记录的是 **1.1.0** 的实测结果。插件 1.1.1 已修复其中的
+> `@LlmLoop(defaultLoop = true)` 分支不可达、`@LlmLoop(order)` 未被消费、`AgentAttributes`
+> 的 `SESSION_ID`/`AGENT_NAME` 无写入点；本模块的断言已改成"钉住新行为"
+> （`DefaultLoopAnnotationTest` / `LoopsTest`）。逐条对应见根目录 `FINDINGS.md` 第一节.5。
+
+本模块实测到 3 处「文档说的」与「代码做的」不一致（下面是 1.1.0 当时的记录）。**没有修改插件**。
 
 ### 问题 1 · `@LlmLoop(defaultLoop = true)` 这条分支实际不可达
 

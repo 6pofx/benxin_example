@@ -219,13 +219,9 @@ public class LocalLmStudioDemo implements ApplicationRunner {
     /** ⑦ 真实 Loop 对照：同一个任务，两个 Loop 的步数与用量。 */
     private void realLoopComparison(Demo demo) {
         demo.section("真实 Loop 对照 —— dsh-minimal vs react");
-        // 同样要用 loop(AgentLoop) 实例重载：loop(String) 在派生副本上也会被静默忽略。
-        // 而且**每派生一次都要重新补 listener** —— toBuilder() 不携带监听器（FINDINGS.md 问题 31），
-        // 所以 localCopy(...) 之后再来一次 toBuilder() 会把刚补上的监听器再丢掉一次。
-        Agent minimal = localCopy("localAssistant").toBuilder()
-                .loop(agentFactory.loopRegistry().get("dsh-minimal")).listener(metrics).build();
-        Agent react = localCopy("localAssistant").toBuilder()
-                .loop(agentFactory.loopRegistry().get("react")).listener(metrics).build();
+        // 只换 loop，其余原样继承（监听器也在其中，所以统计不会漏也不会重复）
+        Agent minimal = localCopy("localAssistant").toBuilder().loop("dsh-minimal").build();
+        Agent react = localCopy("localAssistant").toBuilder().loop("react").build();
         demo.info("两个副本只差 loop：%s / %s", minimal.loop().name(), react.loop().name());
 
         AgentResult a = minimal.call("回答一个字：好", "loop-minimal", null);
@@ -270,23 +266,19 @@ public class LocalLmStudioDemo implements ApplicationRunner {
      * 拿一个"只换了模型"的 Agent 副本。
      *
      * <p>{@code toBuilder()} 会把 Loop / 工具 / 记忆 / 沙箱 / 审批 / 拦截器 / 监听器
-     * 全部原样继承（它带出了各自的注册表），所以这里只写一行就够了 ——
+     * 全部原样继承（注册表与监听器都在里面），所以这里只写一行 {@code model(...)} 就够了 ——
      * 这正是"换模型不改业务代码"的字面意思。</p>
      *
-     * <p><b>注意这里传的是模型实例而不是模型名</b>：{@code toBuilder()} 已经把原模型实例
-     * 放进了 builder，而 {@code DefaultAgent} 的解析顺序是"有实例就用实例，没实例才按名字查表"，
-     * 因此 {@code .model("local-lmstudio")}（字符串重载）在派生副本上会被<b>静默忽略</b>，
-     * 副本会继续用原来那个模型。详见本模块 README 的"容易猜错的口径"与 FINDINGS.md 问题 30。</p>
+     * <p>这里按**名字**换模型。1.1.0 时这一步是不生效的（{@code toBuilder()} 已带模型实例，
+     * 而解析顺序"实例优先"，名字被静默忽略 —— FINDINGS 第 30 条），当时必须传实例；
+     * 1.1.1 修好之后两种写法等价。</p>
+     *
+     * <p>同理，1.1.0 的 {@code toBuilder()} 还会**丢掉监听器**（FINDINGS 第 31 条），
+     * 那时这里要额外补一句 {@code .listener(metrics)}，而现在不用 —— 多补一次反而会让
+     * 同一次运行被统计两遍。</p>
      */
     private Agent localCopy(String agentName) {
-        // 两处都必须用"实例重载"：
-        //   · model(LlmModel) 而不是 model(String) —— 否则派生副本继续用原模型；
-        //   · listener(...) 必须显式补 —— toBuilder() 不携带监听器（见 FINDINGS.md 问题 31），
-        //     不补的话真实调用不会进统计。
-        return agentRegistry.get(agentName).toBuilder()
-                .model(modelRegistry.get(LOCAL_MODEL))
-                .listener(metrics)
-                .build();
+        return agentRegistry.get(agentName).toBuilder().model(LOCAL_MODEL).build();
     }
 
     private static String oneLine(String text) {
