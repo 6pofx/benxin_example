@@ -28,7 +28,7 @@
       设计说明
       ============================================================================
       1. 本工程是**使用者视角**的示例工程：只从本地仓库消费
-         com.benxin:benxin-spring-boot-starter:1.1.0，不把 benxin 当源码依赖，
+         com.benxin:benxin-spring-boot-starter:1.1.1，不把 benxin 当源码依赖，
          因此示例里写出来的每一行代码，第三方使用者都能原样照抄。
       2. 每个子项目都是一个完整的 Spring Boot 应用：有 @SpringBootApplication、
          有 application.yml、可 `mvn spring-boot:run` 直接看到演示输出、可打成可执行 jar。
