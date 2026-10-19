@@ -110,30 +110,36 @@ mvn test
 
 ## 3. 工程结构
 
+`benxin_example` 是一个聚合 POM（Spring Boot 3.5.5 / Java 17），下挂 13 个模块。
+
+**① `exp-common`：所有子项目共享的离线基础设施**（不是 Spring Boot 应用，本身不带用例）
+
 ```
-benxin_example/                      聚合 POM（Spring Boot 3.5.5 / Java 17）
-├── exp-common/             共享离线基础设施（不是 Spring Boot 应用，本身不带用例）
-│   ├── model/ScriptedLlmModel       脚本化模型：零 token 驱动完整 Agent 循环
-│   ├── model/RecordingModel         录制型装饰器：把"真正发出去的请求"留档
-│   ├── tool/CommonTools             多模块共用工具集（天气/时间/计算/上下文）
-│   ├── wire/StubHttpServer          本地 HTTP 桩：抓真实报文 + 回放 JSON / SSE
-│   ├── wire/{OpenAi,Anthropic,Gemini,Responses}Wire   四协议报文与 SSE 帧构造器
-│   ├── db/{SimpleDataSource,Db}     纯 JDBC 小工具（建库 / 建表 / 查询）
-│   └── demo/Demo                    统一演示输出
-│
-├── exp-01-declarative-agent/   20 用例  声明式 Agent：注解全属性 / 参数语义 / 返回值全谱 / 记忆
-├── exp-02-tools/               38 用例  工具：@LlmTool 全谱 / ToolContext / 程序化 ToolCallback / 动态登记
-├── exp-03-builtin-sandbox/     71 用例  8 个内置工具 + 三重开关 + PathSandbox/CommandSandbox + 四种审批
-├── exp-04-loops/               38 用例  8 个内置 Loop + 自定义 @LlmLoop + 子代理派生
-├── exp-05-workflow/           179 用例  声明式工作流：六种节点 / 条件表达式 / 模板 / 容错 / 三道防线
-├── exp-06-context-memory/      78 用例  记忆 / 上下文 / 压缩 / 分词估算 / 提示词来源 / 多模态
-├── exp-07-models-protocols/    77 用例  四协议线级报文 + 自定义协议 / 传输 / 模型装饰器
-├── exp-08-observability-web/   79 用例  监听器全回调 + 拦截器全钩子 + 流式 + HTTP 端点
-├── exp-09-spring-override/    104 用例  逐个切面的 bean 覆盖 / llm.enabled / 程序化装配 / 裸 core 门面
-├── exp-10-database/            72 用例  MySQL+H2 复杂示例：JDBC 记忆 + 查库工具 + 运行审计 + 工作流入库
-├── exp-11-real-deepseek/       19 用例  真实 DeepSeek 联调（默认 skip，显式开关才联网）
-└── exp-12-local-lmstudio/      19 用例  本机小模型（LM Studio / Qwen3-VL-8B）：对话 / 工具 / 流式 / 视觉
+├── model/ScriptedLlmModel       脚本化模型：零 token 驱动完整 Agent 循环
+├── model/RecordingModel         录制型装饰器：把"真正发出去的请求"留档
+├── tool/CommonTools             多模块共用工具集（天气/时间/计算/上下文）
+├── wire/StubHttpServer          本地 HTTP 桩：抓真实报文 + 回放 JSON / SSE
+├── wire/{OpenAi,Anthropic,Gemini,Responses}Wire   四协议报文与 SSE 帧构造器
+├── db/{SimpleDataSource,Db}     纯 JDBC 小工具（建库 / 建表 / 查询）
+└── demo/Demo                    统一演示输出
 ```
+
+**② 12 个子项目：一个切面一个项目，每个都能独立启动**
+
+| 模块 | 用例 | 演示什么 |
+|---|---|---|
+| [exp-01-declarative-agent](exp-01-declarative-agent/README.md) | 20 | 声明式 Agent：注解全属性 / 参数语义 / 返回值全谱 / 记忆 |
+| [exp-02-tools](exp-02-tools/README.md) | 38 | 工具：`@LlmTool` 全谱 / `ToolContext` / 程序化 `ToolCallback` / 动态登记 |
+| [exp-03-builtin-sandbox](exp-03-builtin-sandbox/README.md) | 71 | 8 个内置工具 + 三重开关 + PathSandbox/CommandSandbox + 四种审批 |
+| [exp-04-loops](exp-04-loops/README.md) | 38 | 8 个内置 Loop + 自定义 `@LlmLoop` + 子代理派生 |
+| [exp-05-workflow](exp-05-workflow/README.md) | 179 | 声明式工作流：六种节点 / 条件表达式 / 模板 / 容错 / 三道防线 |
+| [exp-06-context-memory](exp-06-context-memory/README.md) | 78 | 记忆 / 上下文 / 压缩 / 分词估算 / 提示词来源 / 多模态 |
+| [exp-07-models-protocols](exp-07-models-protocols/README.md) | 77 | 四协议线级报文 + 自定义协议 / 传输 / 模型装饰器 |
+| [exp-08-observability-web](exp-08-observability-web/README.md) | 79 | 监听器全回调 + 拦截器全钩子 + 流式 + HTTP 端点 |
+| [exp-09-spring-override](exp-09-spring-override/README.md) | 104 | 逐个切面的 bean 覆盖 / `llm.enabled` / 程序化装配 / 裸 core 门面 |
+| [exp-10-database](exp-10-database/README.md) | 72 | MySQL + H2 复杂示例：JDBC 记忆 + 查库工具 + 运行审计 + 工作流入库 |
+| [exp-11-real-deepseek](exp-11-real-deepseek/README.md) | 19 | 真实 DeepSeek 联调（默认 skip，显式开关才联网） |
+| [exp-12-local-lmstudio](exp-12-local-lmstudio/README.md) | 19 | 本机小模型（LM Studio / Qwen3-VL-8B）：对话 / 工具 / 流式 / **视觉** |
 
 每个子项目都是**完整的 Spring Boot 应用**：有 `@SpringBootApplication`、有 `application.yml`、
 可 `mvn spring-boot:run`、可打成可执行 jar、有 `@SpringBootTest` 测试与**中文 README**。
