@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: exp-13-workflow-java-node
+  main:
+    banner-mode: off
+
+llm:
+  # 本模块**刻意不提供离线 mock 模型**：要演示的是"真实模型 + 本地 Java 节点"的分工，
+  # 换成脚本模型就看不出"模型会把字数数错、而本地代码不会"这件事了。
+  # 端点不在时由 exp.local.mode 决定是跳过还是报错（见 LocalEndpoint）。
+  default-model: local-lmstudio
+
+  agent:
+    default-loop: dsh-minimal
+    # 工作流里的 agent 节点是"一次完整的子任务"，步数给 4 足够：摘要 / 压缩各一次模型往返
+    max-steps: 4
+    hard-max-steps: 8
+    memory: false
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  models:
+    local-lmstudio:
+      protocol: openai
+      base-url: http://127.0.0.1:1234/v1
+      # LM Studio 不校验 key，但字段不能为空：空 key 时 OpenAiCodec 不下发 Authorization 头
+      api-key: lm-studio
+      model: ${LOCAL_MODEL_ID:qwen/qwen3-vl-8b}
+      temperature: 0
+      # 摘要这种短任务给 512：Qwen3 系列会先"想"一段，给太少会把预算全花在 reasoning 上
+      # （finish_reason=length、正文空串 —— 见 FINDINGS 第 47 条，插件已改为打 WARN + 写属性）
+      max-tokens: 512
+      # 本地端点不重试：一次调用就是一笔请求，失败原因一眼可见
+      max-retries: 0
+      connect-timeout: 5s
+      read-timeout: 5m
+      stream-read-timeout: 5m
+
+  workflows:
+    # ① 主演示：真实模型 + 三个 Java 节点
+    content-release:
+      location: classpath:workflows/content-release.yml
+    # ② 失败语义：retry 重试成功 + continueOnError 补偿（这张图里没有 agent 节点，不花模型调用）
+    java-fault:
+      location: classpath:workflows/java-fault.yml
+    # ③ 合规闸门：同一段 Java 逻辑单独成图，两条分支都能确定性验证（同样不花模型调用）
+    compliance-gate:
+      location: classpath:workflows/compliance-gate.yml
+
+  web:
+    enabled: false
+
+exp:
+  local:
+    # auto：探测端点，可达就跑真实演示；不可达就打印原因并只跑不依赖模型的 java-fault
+    # on  ：强制真实演示（不可达时明确失败，适合"我就是要测它"）
+    # off ：强制跳过（CI 用）
+    mode: auto
+    base-url: http://127.0.0.1:1234
+    model: qwen/qwen3-vl-8b
+
+  demo:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

@@ -3,6 +3,7 @@ package com.benxin.exp.workflow;
 import com.benxin.llm.core.loop.LoopRegistry;
 import com.benxin.llm.core.loop.WorkflowLoop;
 import com.benxin.llm.core.workflow.WorkflowDefinition;
+import com.benxin.llm.core.workflow.WorkflowHandlerRegistry;
 import com.benxin.llm.spring.LlmProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -242,11 +243,15 @@ class WorkflowPropertiesTest {
         LlmProperties properties = new LlmProperties();
         properties.setWorkflows(new LinkedHashMap<>(workflows));
 
+        // 1.1.1 之后多了第 4 个参数：工作流处理器注册表。装配期要拿它校验每个 java 节点的
+        // handler 是否存在（未注册的处理器直接让启动失败，演示见 exp-13）。这里没有处理器，传空表。
         Method method = type.getDeclaredMethod("registerDeclaredWorkflows",
-                LoopRegistry.class, LlmProperties.class, ResourceLoader.class);
+                LoopRegistry.class, LlmProperties.class, ResourceLoader.class,
+                WorkflowHandlerRegistry.class);
         method.setAccessible(true);
         try {
-            method.invoke(configuration, registry, properties, resourceLoader);
+            method.invoke(configuration, registry, properties, resourceLoader,
+                    WorkflowHandlerRegistry.empty());
         } catch (InvocationTargetException e) {
             Throwable cause = e.getTargetException() == null ? e : e.getTargetException();
             if (cause instanceof Exception checked) {
@@ -261,8 +266,9 @@ class WorkflowPropertiesTest {
     void reflectionTargetExists() throws Exception {
         Class<?> type = Class.forName("com.benxin.llm.spring.LlmAutoConfiguration");
         Method method = type.getDeclaredMethod("registerDeclaredWorkflows",
-                LoopRegistry.class, LlmProperties.class, ResourceLoader.class);
-        assertThat(method.getParameterCount()).isEqualTo(3);
+                LoopRegistry.class, LlmProperties.class, ResourceLoader.class,
+                WorkflowHandlerRegistry.class);
+        assertThat(method.getParameterCount()).isEqualTo(4);
         assertThat(java.lang.reflect.Modifier.isPrivate(method.getModifiers())).isTrue();
         Field field = type.getDeclaredField("log");
         assertThat(field.getType().getName()).isEqualTo("org.slf4j.Logger");

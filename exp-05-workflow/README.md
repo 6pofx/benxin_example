@@ -12,7 +12,7 @@
 
 | 切面 | 本模块演示的内容 |
 |---|---|
-| 六种节点 | `start`（透传/包装）、`agent`（一次完整子任务）、`tool`（直调工具，不过模型）、`branch`（纯路由）、`set`（写黑板变量）、`end`（渲染最终答案） |
+| 六种节点 | `start`（透传/包装）、`agent`（一次完整子任务）、`tool`（直调工具，不过模型）、`branch`（纯路由）、`set`（写黑板变量）、`end`（渲染最终答案）。<br>第七种 `java`（Java 节点）在 [exp-13](../exp-13-workflow-java-node/README.md) 单独演示 —— 它需要本机模型，且要讲的东西（注册制、两条输出通道、失败语义）值得单独一个模块 |
 | 边的三种形态 | 无条件边（默认边）、`when` 条件边、回边（指向已访问过的节点即构成循环） |
 | 三条装配路径 | ① `llm.workflows.<key>.location` ② `llm.workflows.<key>.inline` ③ 调用时 `Map.of(WorkflowLoop.ATTRIBUTE, yaml/json/对象)` 逐次传入 |
 | 条件表达式 | `==` `!=` `>` `>=` `<` `<=` `contains` `matches` `is empty` `is not empty` `exists` `missing`，`not` `and` `or` 与括号，中文别名 `非` `且` `或` `为空` `不为空` `非空`，`!` `&&` `\|\|` |

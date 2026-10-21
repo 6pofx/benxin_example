@@ -1,0 +1,83 @@
+# ============================================================================
+# 失败语义：Java 节点的 retry 与 continueOnError
+# ----------------------------------------------------------------------------
+#   begin(start) → audit(java, retry: 3) → charge(java, retry: 1, continueOnError: true)
+#                                             ├─ ${error} is not empty ─→ compensate(set) ┐
+#                                             └─ 默认 ────────────────→ ok(set) ──────────┐ │
+#                                                                                        ▼ ▼
+#                                                                                    done(end)
+#
+# 这张图里**没有任何 agent 节点**，所以它一个模型调用都不花 —— 即使 LM Studio 没开也能跑完。
+# 这不是巧合：失败语义本来就该能在"没有模型"的情况下被单独验证。
+#
+# 两个 Java 节点的行为：
+#   * audit  —— 前 2 次抛异常、第 3 次成功；retry: 3 ⇒ 最多执行 1+3 次，够用
+#   * charge —— 次次失败；continueOnError: true ⇒ 不中断整张图，出边读 ${error} 走补偿
+#
+# 关键口径：**重试用尽仍失败的节点也会进访问表**（visited），
+# 所以 visited 证明的是"尝试过哪些节点"，而不只是"成功走过哪些节点"。
+# ============================================================================
+name: java-fault
+description: Java 节点的失败语义：retry 重试成功 + continueOnError 走补偿分支
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "失败语义演示：${input}"
+
+  # retry: 3 ⇒ 最多执行 1 + 3 = 4 次；处理器按 failTimes=2 让前两次必失败
+  - id: audit
+    type: java
+    handler: flaky-audit
+    retry: 3
+    args:
+      failTimes: "2"
+      payload: "${begin}"
+    description: 前两次抛异常，第三次成功 —— 用来证明 retry 对 java 节点同样生效
+
+  # retry: 1 ⇒ 最多执行 2 次；次次失败，但 continueOnError 兜住
+  - id: charge
+    type: java
+    handler: always-fail
+    retry: 1
+    continueOnError: true
+    args:
+      reason: "磁盘配额不足（模拟）"
+    description: 注定失败，但只让这个节点失败、不让整张图崩掉
+
+  # 补偿分支：条件表达式直接读保留变量 ${error}
+  - id: compensate
+    type: set
+    set:
+      outcome: "已进入补偿流程"
+      detail: "${error}"
+
+  - id: ok
+    type: set
+    set:
+      outcome: "正常完成"
+      detail: "-"
+
+  - id: done
+    type: end
+    output: |-
+      【失败语义演示结果】
+      结论：${outcome}
+      审计节点拿到的结果：${audit}
+      失败详情：${detail}
+
+edges:
+  - from: begin
+    to: audit
+  - from: audit
+    to: charge
+  # 条件边在前：失败时优先走补偿
+  - from: charge
+    to: compensate
+    when: "${error} is not empty"
+  - from: charge
+    to: ok
+  - from: compensate
+    to: done
+  - from: ok
+    to: done

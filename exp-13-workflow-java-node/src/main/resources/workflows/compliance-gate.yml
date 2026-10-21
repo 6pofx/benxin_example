@@ -1,0 +1,67 @@
+# ============================================================================
+# 合规闸门：一张**不花模型调用**的图
+# ----------------------------------------------------------------------------
+#   begin(start) → screen(java) → decide(branch)
+#                                   ├─ ${verdict} == 通过 ─→ pass(set)   ┐
+#                                   └─ 默认 ──────────────→ reject(set) ┴→ done(end)
+#
+# 它存在的理由有两个：
+#   1) 同一段 Java 逻辑（compliance 处理器）可以被多张图复用 —— 这里没有 agent 节点，
+#      所以"通过"与"不通过"两条分支都能在**不需要模型**的前提下被确定性地跑到；
+#   2) 它把"业务规则必须恒定"这件事推到极端：整张图里没有任何概率成分。
+#
+# 这也解释了为什么 Java 节点不经过 ToolSandbox 与审批：它是应用自己的 service，
+# 而不是"模型能请求的能力" —— 图里点名它，就一定会执行它。
+# ============================================================================
+name: compliance-gate
+description: 纯本地的合规闸门：敏感词 + 字数上限，两条分支都能单独验证
+
+nodes:
+  - id: begin
+    type: start
+    prompt: "${input}"
+
+  - id: screen
+    type: java
+    handler: compliance
+    args:
+      # 注意这里读的是 ${input}（本次运行的原始输入），不是某个上游节点的输出：
+      # 闸门要检查的是"要发布的东西本身"，不希望被模型的改写影响
+      text: "${input}"
+      banned: "违禁词,内部资料"
+      maxChars: "30"
+
+  - id: decide
+    type: branch
+
+  - id: pass
+    type: set
+    set:
+      outcome: "放行"
+
+  - id: reject
+    type: set
+    set:
+      outcome: "拦截"
+
+  - id: done
+    type: end
+    output: |-
+      【合规闸门】${outcome}
+      判定：${verdict}
+      依据：${violations:-无}
+
+edges:
+  - from: begin
+    to: screen
+  - from: screen
+    to: decide
+  - from: decide
+    to: pass
+    when: "${verdict} == 通过"
+  - from: decide
+    to: reject
+  - from: pass
+    to: done
+  - from: reject
+    to: done

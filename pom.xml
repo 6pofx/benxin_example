@@ -55,6 +55,7 @@
         <module>exp-10-database</module>
         <module>exp-11-real-deepseek</module>
         <module>exp-12-local-lmstudio</module>
+        <module>exp-13-workflow-java-node</module>
     </modules>
 
     <properties>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-13-workflow-java-node</artifactId>
+    <name>exp-13-workflow-java-node</name>
+    <description>
+        示例 13 · 工作流 Java 节点（type: java + @LlmNode）：把本地逻辑放进图里。
+        演示注册制、args 模板渲染、两条输出通道（文本 / 变量）、路由仍由条件边决定、
+        retry 与 continueOnError 的失败语义，以及"模型数不准、本地算得准"的分工。
+        模型用本机 LM Studio（Qwen3-VL-8B）真实调用，**本模块没有离线 mock 模型**。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

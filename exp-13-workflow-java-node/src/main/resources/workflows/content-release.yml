@@ -1,0 +1,143 @@
+# ============================================================================
+# 主演示：内容发布流水线（真实模型 + 三个 Java 节点）
+# ----------------------------------------------------------------------------
+# 这张图要回答一个问题：**什么该交给模型，什么不该**。
+#
+#   begin(start)
+#     → summarize(agent)      真实模型：把一段文字概括成一句话
+#     → stats(java)           本地：数出字数/词数/句数，判定篇幅
+#     → route(branch)
+#          ├─ ${level} == 偏长 ─→ condense(agent) → restats(java)
+#          └─ 默认 ──────────────────────────────┐
+#     → screen(java)          本地：合规校验（敏感词 + 字数上限）   ▲
+#     → decide(branch)                                               │
+#          ├─ ${verdict} == 通过 ─→ pack(java) ─→ done(end)          │
+#          └─ 默认 ──────────────→ reject(set) ──→ done(end)         │
+#
+# 三个 Java 节点各自演示一件事：
+#   1) stats   —— "数"这件事模型会数错，本地代码不会。演示文本通道 + 变量通道。
+#   2) screen  —— 业务规则（敏感词/上限）不该写成提示词：它必须每次都一样。
+#   3) pack    —— 结构化结果直接落进变量，下游不用解析 JSON 字符串。
+#
+# 三个刻意的能力边界在图上看得见：
+#   * Java 节点不调模型（要模型就走 agent 节点）；
+#   * Java 节点不调工具（要工具就走 tool 节点）；
+#   * Java 节点**不决定下一条边** —— 它只写 ${level} / ${verdict}，
+#     走哪条路由下面的 when 决定。整张图只有一种路由机制。
+# ============================================================================
+name: content-release
+description: 摘要（真实模型）→ 本地计数 → 太长则压缩 → 本地合规校验 → 打包
+
+nodes:
+  # ---- start：不写 prompt 时直接透传输入；这里显式写出来是为了看清"图里传的是哪段文本" ----
+  - id: begin
+    type: start
+    prompt: "${input}"
+
+  # ---- 真实模型：一句话摘要 ----
+  - id: summarize
+    type: agent
+    instruction: |-
+      你是内容编辑。只输出结果本身，不要解释过程，不要输出思考内容，不要加引号。
+    prompt: |-
+      把下面这段文字概括成一句话（不超过 40 个字）：
+      ${begin}
+
+  # ---- Java 节点①：本地计数 ----
+  # args 里的 ${summarize} 在派发前由引擎渲染好（和 tool 节点的 args 同一套模板）。
+  - id: stats
+    type: java
+    handler: text-stats
+    args:
+      text: "${summarize}"
+      maxChars: "40"
+    description: 本地数出字数/词数/句数并判定篇幅 —— 模型数不准，这里一定数得准
+
+  # ---- 纯路由：自己不产出，只按出边条件挑一条 ----
+  - id: route
+    type: branch
+
+  # ---- 太长才走这里：再调一次真实模型做压缩 ----
+  - id: condense
+    type: agent
+    instruction: 你是编辑。只输出压缩后的正文，不要解释，不要加引号。
+    prompt: |-
+      把下面这句话压缩到 20 个字以内，保留关键信息：
+      ${summarize}
+
+  # ---- 压缩后重新数一遍：同一段逻辑复用一个 Java 节点 ----
+  # 注意它会**覆盖**变量 text / chars / level —— 因为 packed 的那一版才是要发布的正文。
+  - id: restats
+    type: java
+    handler: text-stats
+    args:
+      text: "${condense}"
+      maxChars: "40"
+
+  # ---- Java 节点②：合规校验 ----
+  # 业务规则必须是"每次都一样"的：把它写进提示词，模型会时灵时不灵；写成 Java 节点则恒定。
+  - id: screen
+    type: java
+    handler: compliance
+    args:
+      text: "${text}"
+      banned: "违禁词,内部资料"
+      maxChars: "60"
+    description: 命中敏感词或超长就判不通过，并写回 ${verdict} / ${violations}
+
+  - id: decide
+    type: branch
+
+  # ---- Java 节点③：打包 ----
+  # 结构化结果走 **变量通道**，字段之间不再靠"拼一段 JSON 字符串再让下游去解析"。
+  - id: pack
+    type: java
+    handler: release-pack
+    args:
+      title: "本机小模型 × 工作流 Java 节点"
+      summary: "${text}"
+      chars: "${chars}"
+
+  # ---- 没通过合规校验：只用 set 写一段说明，不花任何模型调用 ----
+  - id: reject
+    type: set
+    set:
+      packed: "未通过合规校验：${violations}"
+
+  - id: done
+    type: end
+    output: "${packed}"
+
+edges:
+  - from: begin
+    to: summarize
+  - from: summarize
+    to: stats
+  - from: stats
+    to: route
+
+  # 条件边在前、默认边在后：引擎按声明顺序取第一条成立的边走，顺序即优先级
+  - from: route
+    to: condense
+    when: "${level} == 偏长"
+  - from: route
+    to: screen
+
+  - from: condense
+    to: restats
+  - from: restats
+    to: screen
+
+  - from: screen
+    to: decide
+
+  - from: decide
+    to: pack
+    when: "${verdict} == 通过"
+  - from: decide
+    to: reject
+
+  - from: pack
+    to: done
+  - from: reject
+    to: done
