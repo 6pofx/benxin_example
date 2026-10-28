@@ -82,7 +82,7 @@ https://github.com/6pofx/benxin_example    本仓库：16 个 Maven 项目（聚
 #    （com.benxin:* 目前没有发布到 Maven Central，这一步跳不过去）
 git clone https://github.com/6pofx/benxin.git
 cd benxin
-git checkout v1.1.1      # exp-13 需要更新的插件，见下面的说明
+git checkout feature/java-flow   # exp-13/exp-14 需要这个分支；只跑 exp-01~12 用 v1.1.1 即可
 mvn install -DskipTests
 cd ..
 
@@ -105,8 +105,9 @@ mvn test
 
 > **⚠️ exp-13 / exp-14 需要比 `v1.1.1` 更新的插件。**
 > 工作流 Java 节点（`type: java` + `@LlmNode`）与代码编排（`flow` / `JavaFlow`）都是
-> 1.1.1 之后新增的能力，**尚未进入任何 tag**。
-> exp-01 ~ exp-12 用 `v1.1.1` 就能全部跑通；exp-13 / exp-14 需要一份包含这些功能的插件构建。
+> 1.1.1 之后新增的能力，**尚未进入任何 tag**，目前挂在插件的
+> [`feature/java-flow`](https://github.com/6pofx/benxin/tree/feature/java-flow) 分支上（上面第 ① 步就是切到这个分支）。
+> exp-01 ~ exp-12 用 `v1.1.1` 就能全部跑通；exp-13 / exp-14 需要这份包含新功能的构建。
 > 手里只有 `v1.1.1` 时，把根 `pom.xml` 里这两个 module 注释掉即可。
 > 判断插件是否够新：`jar tf ~/.m2/repository/com/benxin/benxin-core/1.1.1/benxin-core-1.1.1.jar | grep -E "LlmNode|JavaFlow"`。
 
