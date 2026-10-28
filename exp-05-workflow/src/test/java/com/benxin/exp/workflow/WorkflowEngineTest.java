@@ -732,8 +732,8 @@ class WorkflowEngineTest {
                 .hasMessageContaining("已有节点");
         assertThat(definition.nodes()).hasSize(2);
         assertThat(definition.edges()).hasSize(1);
-        // 1.1.1 之后新增了第七种节点类型 java（工作流 Java 节点），演示见 exp-13
-        assertThat(List.of(NodeType.values())).hasSize(7);
-        assertThat(List.of(NodeType.values())).contains(NodeType.JAVA);
+        // 1.1.1 之后节点类型从 6 增到 8：java（Java 节点，见 exp-13）与 code（代码节点，见 exp-14）
+        assertThat(List.of(NodeType.values())).hasSize(8);
+        assertThat(List.of(NodeType.values())).contains(NodeType.JAVA, NodeType.CODE);
     }
 }

@@ -8,6 +8,9 @@
 
 ## 8 个内置 Loop 对照表
 
+> 插件现在的内置 Loop 是 **9 个**：多出来的 `flow`（代码编排）需要真模型与一张像样的图，
+> 单独在 [exp-14](../exp-14-expense-approval-flow/README.md) 演示。本模块只覆盖能离线跑完的这 8 个。
+
 | Loop | 触发条件 | 特征 | 本模块断言了什么 |
 |---|---|---|---|
 | `dsh-minimal` | 名字点名或回落默认 | 最小骨架：调模型 → 执行工具 → 回灌，直到模型不再请求工具。零内置提示词、零压缩 | 工具闭环成立（`toolCalls` 有记录、`steps ≥ 2`、token 为正），且**没有** `benxin.claude-code.*` / `benxin.codex.*` 这类属性 |

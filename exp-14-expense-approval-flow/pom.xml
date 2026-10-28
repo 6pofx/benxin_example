@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.benxin.exp</groupId>
+        <artifactId>benxin-exp</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exp-14-expense-approval-flow</artifactId>
+    <name>exp-14-expense-approval-flow</name>
+    <description>
+        示例 14 · 代码编排（flow）跑一条真实的差旅报销审批流程：收单解析 → 费用类别识别 →
+        风险评估 → 金额×风险分级 → 部门经理 / 财务总监审批 → 补件回边 → 记账凭证。
+        业务规则与账务用代码节点（确定性），判断用本机 LM Studio 的真实模型（输出契约 choice）。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.benxin</groupId>
+            <artifactId>benxin-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.benxin.exp</groupId>
+            <artifactId>exp-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

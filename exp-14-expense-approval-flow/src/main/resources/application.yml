@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: exp-14-expense-approval-flow
+  main:
+    banner-mode: off
+
+llm:
+  # 本模块只连本机 LM Studio，不提供离线 mock —— 报销审批里"判断"这一步就是要真模型。
+  default-model: local-lmstudio
+
+  agent:
+    default-loop: dsh-minimal
+    # 一条最长的路径：类别识别 → 风险评估 → 总监审批 = 3 次模型往返，给 8 步留两倍余量
+    max-steps: 8
+    hard-max-steps: 16
+    memory: false
+    logging-listener: true
+    approval-policy: on-request
+
+  tools:
+    builtin-enabled: false
+    workdir: .
+    allow-write: false
+    allow-exec: false
+
+  models:
+    local-lmstudio:
+      protocol: openai
+      base-url: http://127.0.0.1:1234/v1
+      api-key: lm-studio
+      model: ${LOCAL_MODEL_ID:qwen/qwen3-vl-8b}
+      temperature: 0
+      # 审批结论只要一个枚举值，但 Qwen3 会先"想"一段，给 512 免得预算全花在 reasoning 上
+      max-tokens: 512
+      max-retries: 0
+      connect-timeout: 5s
+      read-timeout: 5m
+      stream-read-timeout: 5m
+
+  web:
+    enabled: false
+
+# 业务规则（真实系统里这些来自制度文件 / 预算配置，这里做成可配的）
+exp:
+  expense:
+    # 单笔金额上限：超过就不能走普通审批，必须补分管副总签批
+    single-claim-limit: 20000
+    # 低风险且不超过这个金额 → 系统自动通过
+    auto-approve-limit: 2000
+    # 不超过这个金额 → 部门经理；超过 → 财务总监
+    manager-limit: 10000
+    # 补件最多几轮：超过就按"补件超时"关闭，避免无限回流
+    max-supplement-rounds: 2
+
+  local:
+    mode: auto
+    base-url: http://127.0.0.1:1234
+    model: qwen/qwen3-vl-8b
+
+  demo:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.benxin: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %-38.38logger{0} : %msg%n"

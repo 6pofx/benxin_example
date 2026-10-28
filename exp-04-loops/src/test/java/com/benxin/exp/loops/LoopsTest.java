@@ -602,11 +602,13 @@ class LoopsTest {
     }
 
     @Test
-    @DisplayName("BuiltinLoops：NAMES 八个名字，DEFAULT_LOOP = dsh-minimal")
+    @DisplayName("BuiltinLoops：NAMES 九个名字（含代码编排 flow），DEFAULT_LOOP = dsh-minimal")
     void builtinLoopsConstants() {
+        // 1.1.1 之后新增了第三种编排路线 flow（代码编排），排在 workflow 与 staged 之间；
+        // 它的完整演示在 exp-14
         assertThat(BuiltinLoops.NAMES).containsExactly(
                 "dsh-minimal", "react", "claude-code", "codex",
-                "plan-execute", "reflexion", "workflow", "staged");
+                "plan-execute", "reflexion", "workflow", "flow", "staged");
         assertThat(BuiltinLoops.DEFAULT_LOOP).isEqualTo("dsh-minimal");
         assertThat(loopRegistry.names()).containsAll(BuiltinLoops.NAMES);
         // 变体注册：同一个 Loop 类的不同构造参数，以新名字并存

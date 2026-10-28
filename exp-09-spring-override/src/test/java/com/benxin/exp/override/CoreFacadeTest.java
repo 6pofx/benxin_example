@@ -394,6 +394,9 @@ class CoreFacadeTest {
         assertThat(Benxin.loops().find("不存在的 Loop")).isEmpty();
 
         List<String> names = List.copyOf(Benxin.loops().names());
-        assertThat(names).hasSize(8);
+        // 用内置清单的长度而不是写死数字：插件每加一个内置 Loop（1.1.1 之后加了 flow），
+        // 这里就不需要再跟一次
+        assertThat(names).hasSize(com.benxin.llm.core.loop.BuiltinLoops.NAMES.size());
+        assertThat(names).contains("flow");
     }
 }

@@ -1,13 +1,13 @@
 # benxin_example · 本心（benxin）插件示例工程
 
-> 一个聚合 Maven 工程：**13 个可独立运行的 Spring Boot 子项目 + 1 个共享的离线基础设施模块**，
+> 一个聚合 Maven 工程：**14 个可独立运行的 Spring Boot 子项目 + 1 个共享的离线基础设施模块**，
 > 把「本心」声明式 LLM Agent 插件的每一个切面，演示到"看得见、跑得动、断言得住"。
-> **默认零 token**；**820 个用例**把演示里说的每一句话钉成回归断言。
+> **默认零 token**；**848 个用例**把演示里说的每一句话钉成回归断言。
 
 ![Java](https://img.shields.io/badge/Java-17-blue)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.5-6DB33F)
 ![benxin](https://img.shields.io/badge/benxin-1.1.1-orange)
-![tests](https://img.shields.io/badge/tests-820%20passed-success)
+![tests](https://img.shields.io/badge/tests-848%20passed-success)
 ![offline](https://img.shields.io/badge/default-token%20free-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -46,7 +46,7 @@ public interface WeatherAssistant {
 
 1. **每个功能具体怎么用？** —— 每个切面一个子项目，`mvn spring-boot:run` 就能看到输出。
 2. **我猜的语义对不对？** —— 演示里的每一句话都有 `@SpringBootTest` 断言，`mvn test` 会告诉你答案。
-3. **换个版本会不会坏？** —— 820 个用例就是"防腐烂层"；插件升级后跑一遍，就知道哪条口径变了。
+3. **换个版本会不会坏？** —— 848 个用例就是"防腐烂层"；插件升级后跑一遍，就知道哪条口径变了。
 
 本工程是**使用者视角**的：只从 Maven 仓库消费 `com.benxin:benxin-spring-boot-starter` 的二进制，
 **不把插件当源码依赖，也不修改插件源码** —— 所以这里写出来的每一行代码，第三方使用者都能原样照抄。
@@ -55,7 +55,7 @@ public interface WeatherAssistant {
 https://github.com/6pofx/benxin            插件本体（MIT，独立仓库）—— 本仓库只依赖、不修改
               │  mvn install  →  本地 Maven 仓库
               ▼
-https://github.com/6pofx/benxin_example    本仓库：15 个 Maven 项目（聚合 POM + 14 个子项目）/ 820 个用例
+https://github.com/6pofx/benxin_example    本仓库：16 个 Maven 项目（聚合 POM + 15 个子项目）/ 848 个用例
 ```
 
 > 仓库名是 `benxin_example`，工程内目录名与 Maven `artifactId` 仍是 `benxin_exp` / `benxin-exp`。
@@ -96,18 +96,19 @@ cd exp-01-declarative-agent
 mvn spring-boot:run
 ```
 
-一次跑完全部 **820** 个用例（离线可跑，不会烧掉一个 token）：
+一次跑完全部 **848** 个用例（离线可跑，不会烧掉一个 token）：
 
 ```bash
 cd benxin_example
 mvn test
 ```
 
-> **⚠️ exp-13 需要比 `v1.1.1` 更新的插件。**
-> 工作流 Java 节点（`type: java` + `@LlmNode`）是 1.1.1 之后新增的能力，**尚未进入任何 tag**。
-> exp-01 ~ exp-12 用 `v1.1.1` 就能全部跑通；exp-13 需要一份包含该功能的插件构建。
-> 手里只有 `v1.1.1` 时，把根 `pom.xml` 里的 `<module>exp-13-workflow-java-node</module>` 注释掉即可。
-> 判断插件是否够新：`jar tf ~/.m2/repository/com/benxin/benxin-core/1.1.1/benxin-core-1.1.1.jar | grep LlmNode`。
+> **⚠️ exp-13 / exp-14 需要比 `v1.1.1` 更新的插件。**
+> 工作流 Java 节点（`type: java` + `@LlmNode`）与代码编排（`flow` / `JavaFlow`）都是
+> 1.1.1 之后新增的能力，**尚未进入任何 tag**。
+> exp-01 ~ exp-12 用 `v1.1.1` 就能全部跑通；exp-13 / exp-14 需要一份包含这些功能的插件构建。
+> 手里只有 `v1.1.1` 时，把根 `pom.xml` 里这两个 module 注释掉即可。
+> 判断插件是否够新：`jar tf ~/.m2/repository/com/benxin/benxin-core/1.1.1/benxin-core-1.1.1.jar | grep -E "LlmNode|JavaFlow"`。
 
 > **`-o` 离线开关**：本机已缓存全部依赖后，所有命令都可以加 `-o`（如 `mvn -o test`）以完全断网运行。
 > 首次构建请不要加，否则会因为缺依赖而失败。
@@ -116,7 +117,7 @@ mvn test
 
 ## 3. 工程结构
 
-`benxin_example` 是一个聚合 POM（Spring Boot 3.5.5 / Java 17），下挂 14 个模块。
+`benxin_example` 是一个聚合 POM（Spring Boot 3.5.5 / Java 17），下挂 15 个模块。
 
 **① `exp-common`：所有子项目共享的离线基础设施**（不是 Spring Boot 应用，本身不带用例）
 
@@ -130,14 +131,14 @@ mvn test
 └── demo/Demo                    统一演示输出
 ```
 
-**② 13 个子项目：一个切面一个项目，每个都能独立启动**
+**② 14 个子项目：一个切面一个项目，每个都能独立启动**
 
 | 模块 | 用例 | 演示什么 |
 |---|---|---|
 | [exp-01-declarative-agent](exp-01-declarative-agent/README.md) | 20 | 声明式 Agent：注解全属性 / 参数语义 / 返回值全谱 / 记忆 |
 | [exp-02-tools](exp-02-tools/README.md) | 38 | 工具：`@LlmTool` 全谱 / `ToolContext` / 程序化 `ToolCallback` / 动态登记 |
 | [exp-03-builtin-sandbox](exp-03-builtin-sandbox/README.md) | 71 | 8 个内置工具 + 三重开关 + PathSandbox/CommandSandbox + 四种审批 |
-| [exp-04-loops](exp-04-loops/README.md) | 38 | 8 个内置 Loop + 自定义 `@LlmLoop` + 子代理派生 |
+| [exp-04-loops](exp-04-loops/README.md) | 38 | 8 个内置 Loop（第 9 个 `flow` 见 exp-14）+ 自定义 `@LlmLoop` + 子代理派生 |
 | [exp-05-workflow](exp-05-workflow/README.md) | 179 | 声明式工作流：六种节点 / 条件表达式 / 模板 / 容错 / 三道防线 |
 | [exp-06-context-memory](exp-06-context-memory/README.md) | 78 | 记忆 / 上下文 / 压缩 / 分词估算 / 提示词来源 / 多模态 |
 | [exp-07-models-protocols](exp-07-models-protocols/README.md) | 77 | 四协议线级报文 + 自定义协议 / 传输 / 模型装饰器 |
@@ -147,6 +148,7 @@ mvn test
 | [exp-11-real-deepseek](exp-11-real-deepseek/README.md) | 19 | 真实 DeepSeek 联调（默认 skip，显式开关才联网） |
 | [exp-12-local-lmstudio](exp-12-local-lmstudio/README.md) | 19 | 本机小模型（LM Studio / Qwen3-VL-8B）：对话 / 工具 / 流式 / **视觉** |
 | [exp-13-workflow-java-node](exp-13-workflow-java-node/README.md) | 26 | 工作流 **Java 节点**（`type: java` + `@LlmNode`）：注册制 / 两条输出通道 / 失败语义，模型用本机 LM Studio |
+| [exp-14-expense-approval-flow](exp-14-expense-approval-flow/README.md) | 28 | **代码编排**（`flow` / `JavaFlow`）跑真实业务：差旅报销审批，模型用本机 LM Studio + 输出契约 |
 
 每个子项目都是**完整的 Spring Boot 应用**：有 `@SpringBootApplication`、有 `application.yml`、
 可 `mvn spring-boot:run`、可打成可执行 jar、有 `@SpringBootTest` 测试与**中文 README**。
@@ -188,7 +190,7 @@ java -jar exp-10-database/target/exp-10-database-1.0.0.jar --spring.profiles.act
 ### 4.2 跑测试
 
 ```bash
-# 全部模块（15 个 reactor 项目）
+# 全部模块（16 个 reactor 项目）
 cd benxin_example
 mvn test
 
@@ -212,9 +214,10 @@ mvn -pl exp-05-workflow test -Dtest=WorkflowEngineTest
 | exp-11 | **否（默认）** | 只有显式打开开关（`-Dexp.real.enabled=true` + 提供 key）才会调用 DeepSeek |
 | exp-12 | **否（默认 `auto` 探测）** | 端点只有 `127.0.0.1:1234`（本机 LM Studio）：可达就跑真实演示，不可达就只跑离线演示；**本地推理不花钱、不出网** |
 | exp-13 | **否（默认 `auto` 探测）** | 同样只连本机 LM Studio；**没有离线 mock 模型**（要演示"模型会数错、本地不会"），不可达时跳过需要模型的那张图，另两张图（失败语义、合规闸门）零模型调用照跑 |
+| exp-14 | **否（默认 `auto` 探测）** | 同样只连本机 LM Studio；一次完整演示（5 个场景）约 1629 tokens，**全部本地推理**；"无法受理"那条路径 0 token（图里到不了模型节点） |
 
 因此 `mvn test` 在离线环境与 CI 里都能稳定通过，**不会烧掉一个 token**
-（exp-12 若本机开着 LM Studio 会顺带跑 7 个本地用例、exp-13 会跑 1 个，同样零成本）。
+（exp-12 若本机开着 LM Studio 会顺带跑 7 个本地用例、exp-13 跑 1 个、exp-14 跑 3 个，同样零成本）。
 
 exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`temperature: 0`、
 每个演示只调一次模型；错误路径用**故意写错的 key**（上游 401 拒绝，**0 token**）。
@@ -237,6 +240,8 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
 | exp-12 | 环境变量 `LOCAL_MODEL_ID` | `qwen/qwen3-vl-8b` | 换成本机已加载的其它模型 id |
 | exp-13 | `exp.local.mode` | `auto` | 同 exp-12；本模块没有离线模型，`on` 时连不上会明确报错 |
 | exp-13 | 环境变量 `LOCAL_MODEL_ID` | `qwen/qwen3-vl-8b` | 换成本机已加载的其它模型 id |
+| exp-14 | `exp.expense.auto-approve-limit` / `manager-limit` / `single-claim-limit` | `2000` / `10000` / `20000` | 报销分级阈值（业务规则，改配置不改图） |
+| exp-14 | `exp.demo.print-graph` | `true` | 演示时是否打印 `Mermaid.toMermaid` 导出的图 |
 
 > 本仓库**不含任何真实密钥**：`application.yml` 里的 `sk-*` 全是 `sk-demo` / `sk-test` 这类占位符，
 > 数据库密码走 `${MYSQL_PASSWORD:123456}` 这类环境变量占位。
@@ -252,7 +257,7 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
 | 模型 | `LlmModel` | exp-07（bean / `@LlmModelDef` / 程序化 / 装饰器）、exp-09（覆盖 `ModelRegistry`） |
 | 协议 | `ProtocolCodec` | exp-07（四协议线级 + 自定义协议 + 同名覆盖 + 未注册快速失败） |
 | 传输 | `HttpTransport` | exp-07（录制装饰器 / 完全假实现 / `postStreaming` 误用报错）、exp-11（报文留档） |
-| 循环 | `AgentLoop` | exp-04（8 个内置 + 2 个自定义 + `defaultLoop`）、exp-05（`workflow` / `staged`） |
+| 循环 | `AgentLoop` | exp-04（8 个离线内置 + 2 个自定义 + `defaultLoop`）、exp-05（`workflow` / `staged`）、**exp-14（`flow` 代码编排）** |
 | 工具 | `ToolCallback` | exp-02（注解 / 程序化 / 动态登记 / 目录 API）、exp-10（写库工具 + 审批） |
 | 上下文 | `ContextManager` | exp-06（自定义实现 + `DefaultContextManager` 参数语义） |
 | 压缩 | `ContextCompactor` | exp-06（Summarizing / SlidingWindow / none / 自定义） |
@@ -295,6 +300,9 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
 | 子代理派生与用量补记 | exp-04（注解 / 编程式 / `ToolContext.spawn` 三种） |
 | 工作流六节点 + 条件表达式 + 模板 + 三道防线 | exp-05（含纯引擎 + 假 `WorkflowRuntime` 的离线验证） |
 | **工作流 Java 节点**（第七种节点 + 两条输出通道 + 注册制） | **exp-13**（真实模型参与的主图 + 两张零模型调用的图） |
+| **代码编排**（`flow` / `JavaFlow`：图写在 Java 里、节点是对象、边是谓词） | **exp-14**（真实业务：差旅报销审批，17 节点 / 23 边 / 4 出口 / 2 回边） |
+| **输出契约 `choice`**（模型只许吐枚举值：归一化 + 纠正重试 + 用尽即失败） | **exp-14**（四个模型节点都带契约，下游 `caseOf` 精确匹配） |
+| **`Mermaid.toMermaid`**（把代码里的图导回去和设计稿比对） | **exp-14**（演示直接打印导出结果） |
 | HTTP 端点（5 个）与 SSE 事件 | exp-08（含"按直觉猜会猜错"的契约表逐条断言） |
 | `AgentResult` 全字段 | exp-01、exp-08 |
 | 会话 / 历史 / `AgentSession` | exp-01、exp-06、exp-10、exp-12 |
@@ -310,7 +318,7 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
 插件 **1.1.0** 时期，本工程的各个模块实测发现并上报了 **31 条**问题（每条都有复现位置：
 `插件源码:行号` + 本工程的测试名，以及"实际 vs 预期"）。
 插件作者在 **1.1.1** 里修掉了其中 **30 条**（第 23 条经复核不是缺陷，只是"测试夹具别放主应用包下"的提醒），
-于是本工程把对应断言从"钉住旧行为"**翻转成"钉住新行为"** —— 这 820 个用例因此同时成为这 30 条修复的回归测试。
+于是本工程把对应断言从"钉住旧行为"**翻转成"钉住新行为"** —— 这 848 个用例因此同时成为这 30 条修复的回归测试。
 
 其中原属"高危 / 高价值"的四条：
 
@@ -340,7 +348,7 @@ exp-11 里做了完整的 token 控制：`max-tokens: 48`、`max-retries: 0`、`
 2. **演示即文档**：每个模块都有 `ApplicationRunner`，`mvn spring-boot:run` 就能看到结论；
    结论用 `com.benxin.exp.common.demo.Demo` 统一输出。
 3. **结论必须被断言**：演示里说的每一句话，都在 `@SpringBootTest` 里有对应断言 ——
-   820 个用例就是这个工程的"防腐烂层"（插件升级后跑一遍就知道哪条口径变了）。
+   848 个用例就是这个工程的"防腐烂层"（插件升级后跑一遍就知道哪条口径变了）。
 4. **注释解释"为什么"**：尤其是"按直觉会猜错"的地方，代码里写清原因。
 5. **不修改插件**：发现插件缺陷只记录、不修改源码；示例若必须绕开，
    注释里注明这是绕开而不是正确用法。
